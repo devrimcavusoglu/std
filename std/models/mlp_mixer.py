@@ -33,22 +33,30 @@ def MLPMixer(*, image_size, channels, patch_size, dim, depth, num_classes, expan
     chan_first, chan_last = partial(nn.Conv1d, kernel_size = 1), nn.Linear
 
     return nn.Sequential(
-        Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1 = patch_size, p2 = patch_size),
-        nn.Linear((patch_size ** 2) * channels, dim),
+        # Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1 = patch_size, p2 = patch_size),  # Extract patches
+        # nn.Linear((patch_size ** 2) * channels, dim),  # Per-patch FC
+        nn.Conv2d(3, dim, 1),
+        nn.Conv2d(dim, dim, patch_size, stride=patch_size, groups=dim),
+        Rearrange('b c p1 p2 -> b (p1 p2) c'),
         *[nn.Sequential(
-            PreNormResidual(dim, FeedForward(num_patches, expansion_factor, dropout, chan_first)),
-            PreNormResidual(dim, FeedForward(dim, expansion_factor_token, dropout, chan_last))
+            PreNormResidual(dim, FeedForward(num_patches, expansion_factor, dropout, chan_first)),  # Token-mixing
+            PreNormResidual(dim, FeedForward(dim, expansion_factor_token, dropout, chan_last))  # Channel-mixing
         ) for _ in range(depth)],
-        nn.LayerNorm(dim),
-        Reduce('b n c -> b c', 'mean'),
-        nn.Linear(dim, num_classes)
+        nn.LayerNorm(dim),  # LN
+        Reduce('b n c -> b c', 'mean'),  # GAP
+        nn.Linear(dim, num_classes)  # Classification head
     )
 
 
 if __name__ == "__main__":
     import torch
+    from torchinfo import summary
 
-    mixer = MLPMixer(image_size=64, channels=3, patch_size=16, dim=64, depth=1, num_classes=2)
-    x = torch.randn(4, 3, 64, 64)
-    y = mixer(x)
-    print(x.shape, y.shape)
+    device = torch.device("cuda")
+    image_size = 224
+    mixer = MLPMixer(image_size=image_size, channels=3, patch_size=56, dim=512, depth=1, num_classes=1000).to(device)
+    input_size = (1, 3, image_size, image_size)  # b,c,h,w
+    summary(mixer, input_size=input_size, device=device)
+    # x = torch.randn(*input_size, device=device)
+    # y = mixer(x)
+    # print(x.shape, y.shape)
