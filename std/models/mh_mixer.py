@@ -73,8 +73,8 @@ if __name__ == "__main__":
     from torchinfo import summary
 
     device = torch.device("cuda")
-    image_size = 224
-    mixer = MHMixer(image_size=image_size, patch_size=28, dim=512, depth=1, num_classes=1000)
+    image_size = 448
+    mixer = MHMixer(image_size=image_size, patch_size=16, dim=512, depth=1, num_classes=1000)
     mixer = mixer.to(device)
     input_size = (1, 3, image_size, image_size)  # b,c,h,w
     summary(mixer, input_size=input_size, device=device)

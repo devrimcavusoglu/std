@@ -149,8 +149,8 @@ def get_args_parser():
                         help='How to apply mixup/cutmix params. Per "batch", "pair", or "elem"')
 
     # Distillation parameters
-    parser.add_argument('--teacher-model', default='regnety_160', type=str, metavar='MODEL',
-                        help='Name of teacher model to train (default: "regnety_160"')
+    parser.add_argument('--teacher-model', default='resnet_50', type=str, metavar='MODEL',
+                        help='Name of teacher model to train (default: "resnet_50"')
     parser.add_argument('--teacher-path', type=str, default='')
     parser.add_argument('--distillation-type', default='none', choices=['none', 'soft', 'hard'], type=str, help="")
     parser.add_argument('--distillation-alpha', default=0.5, type=float, help="")
