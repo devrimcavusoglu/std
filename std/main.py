@@ -22,7 +22,7 @@ from std.dataset import build_dataset
 from std.engine import train_one_epoch, evaluate
 from std.losses import DistillationLoss
 from std.samplers import RASampler
-import std.models.cycle_mlp
+from std.models.mlp_mixer import MLPMixer
 import utils
 
 try:
@@ -149,8 +149,8 @@ def get_args_parser():
                         help='How to apply mixup/cutmix params. Per "batch", "pair", or "elem"')
 
     # Distillation parameters
-    parser.add_argument('--teacher-model', default='resnet_50', type=str, metavar='MODEL',
-                        help='Name of teacher model to train (default: "resnet_50"')
+    parser.add_argument('--teacher-model', default='resnet50', type=str, metavar='MODEL',
+                        help='Name of teacher model to train (default: "resnet50"')
     parser.add_argument('--teacher-path', type=str, default='')
     parser.add_argument('--distillation-type', default='none', choices=['none', 'soft', 'hard'], type=str, help="")
     parser.add_argument('--distillation-alpha', default=0.5, type=float, help="")
@@ -291,14 +291,15 @@ def main(args):
             label_smoothing=args.smoothing, num_classes=args.nb_classes)
 
     print(f"Creating model: {args.model}")
-    model = create_model(
-        args.model,
-        pretrained=False,
-        num_classes=args.nb_classes,
-        drop_rate=args.drop,
-        drop_path_rate=args.drop_path,
-        drop_block_rate=None,
-    )
+    # model = create_model(
+    #     args.model,
+    #     pretrained=False,
+    #     num_classes=args.nb_classes,
+    #     drop_rate=args.drop,
+    #     drop_path_rate=args.drop_path,
+    #     drop_block_rate=None,
+    # )
+    model = MLPMixer(image_size=args.input_size, channels=3, patch_size=4, dim=512, depth=1)
 
     if args.flops:
         if not has_fvcore:
@@ -406,20 +407,20 @@ def main(args):
 
     teacher_model = None
     if args.distillation_type != 'none':
-        assert args.teacher_path, 'need to specify teacher-path when using distillation'
+        # assert args.teacher_path, 'need to specify teacher-path when using distillation'
         print(f"Creating teacher model: {args.teacher_model}")
         teacher_model = create_model(
             args.teacher_model,
-            pretrained=False,
+            pretrained=True,
             num_classes=args.nb_classes,
             global_pool='avg',
         )
-        if args.teacher_path.startswith('https'):
-            checkpoint = torch.hub.load_state_dict_from_url(
-                args.teacher_path, map_location='cpu', check_hash=True)
-        else:
-            checkpoint = torch.load(args.teacher_path, map_location='cpu')
-        teacher_model.load_state_dict(checkpoint['model'])
+        # if args.teacher_path.startswith('https'):
+        #     checkpoint = torch.hub.load_state_dict_from_url(
+        #         args.teacher_path, map_location='cpu', check_hash=True)
+        # else:
+        #     checkpoint = torch.load(args.teacher_path, map_location='cpu')
+        # teacher_model.load_state_dict(checkpoint['model'])
         teacher_model.to(device)
         teacher_model.eval()
 
