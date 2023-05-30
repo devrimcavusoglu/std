@@ -22,8 +22,8 @@ from std.dataset import build_dataset
 from std.engine import train_one_epoch, evaluate
 from std.losses import DistillationLoss
 from std.samplers import RASampler
-from std.models.mlp_mixer import MLPMixer
-import utils
+from std.models.std_mlp_mixer import STDMLPMixer
+import std.utils as utils
 
 try:
     from apex import amp
@@ -152,7 +152,7 @@ def get_args_parser():
     parser.add_argument('--teacher-model', default='resnet50', type=str, metavar='MODEL',
                         help='Name of teacher model to train (default: "resnet50"')
     parser.add_argument('--teacher-path', type=str, default='')
-    parser.add_argument('--distillation-type', default='none', choices=['none', 'soft', 'hard'], type=str, help="")
+    parser.add_argument('--distillation-type', default='hard', choices=['none', 'soft', 'hard'], type=str, help="")
     parser.add_argument('--distillation-alpha', default=0.5, type=float, help="")
     parser.add_argument('--distillation-tau', default=1.0, type=float, help="")
 
@@ -290,7 +290,7 @@ def main(args):
             prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
             label_smoothing=args.smoothing, num_classes=args.nb_classes)
 
-    print(f"Creating model: {args.model}")
+    # print(f"Creating model: {args.model}")
     # model = create_model(
     #     args.model,
     #     pretrained=False,
@@ -299,7 +299,8 @@ def main(args):
     #     drop_path_rate=args.drop_path,
     #     drop_block_rate=None,
     # )
-    model = MLPMixer(image_size=args.input_size, channels=3, patch_size=4, dim=512, depth=1)
+    print(f"Creating model: STDMLPMixer")
+    model = STDMLPMixer(image_size=args.input_size, channels=3, patch_size=16, dim=512, depth=1, dropout=args.drop, num_classes=100)
 
     if args.flops:
         if not has_fvcore:
