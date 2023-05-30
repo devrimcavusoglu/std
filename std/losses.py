@@ -5,6 +5,7 @@ Implements the knowledge distillation loss
 """
 import torch
 from torch.nn import functional as F
+from torch.nn.modules.loss import _Loss
 
 
 class DistillationLoss(torch.nn.Module):
@@ -62,3 +63,14 @@ class DistillationLoss(torch.nn.Module):
 
         loss = base_loss * (1 - self.alpha) + distillation_loss * self.alpha
         return loss
+
+
+class MINELoss(_Loss):
+    def __init__(self):
+        super().__init__()
+        self.base_criterion = base_criterion
+        self.teacher_model = teacher_model
+        assert distillation_type in ['none', 'soft', 'hard']
+        self.distillation_type = distillation_type
+        self.alpha = alpha
+        self.tau = tau

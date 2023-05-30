@@ -317,6 +317,7 @@ def main(args):
             print('=' * 30)
             print("fvcore MAdds: {:.3f} G".format(count))
 
+    # This part is not changed from DeiT, should be refactored for allMLP
     if args.finetune:
         if args.finetune.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(

@@ -84,7 +84,7 @@ class STDMLPMixer(nn.Module):
         self.classifier = nn.Linear(dim, num_classes)
         self.classifier_dist = nn.Linear(dim + n_patches, num_classes)
 
-    def forward(self, x):
+    def forward_features(self, x):
         B = x.shape[0]  # n_batch
         x = self.patchifier(x)
         z = self.per_patch_fc(x)
@@ -93,6 +93,11 @@ class STDMLPMixer(nn.Module):
             z, ts, tc = layer(z, ts, tc)
         z = self.ln(z)
         z = self.gap(z)
+        return z, ts, tc
+
+    def forward(self, x):
+        B = x.shape[0]  # n_batch
+        z, ts, tc = self.forward_features(x)
         outputs = self.classifier(z)
         t_dist = torch.cat((ts.view(B, -1), tc.view(B, -1)), dim=-1)
         outputs_dist = self.classifier_dist(t_dist)
@@ -104,16 +109,29 @@ class STDMLPMixer(nn.Module):
 if __name__ == "__main__":
     import torch
     from torchinfo import summary
+    from std.mine import mine_regularization
 
     torch.manual_seed(3)
 
     device = torch.device("cuda")
     image_size = 224
     mixer = STDMLPMixer(image_size=image_size, channels=3, patch_size=16, dim=512, depth=2, num_classes=10).to(device)
-    input_size = (1, 3, image_size, image_size)  # b,c,h,w
+    input_size = (2, 3, image_size, image_size)  # b,c,h,w
     summary(mixer, input_size=input_size, device=device)
     torch.manual_seed(3)
     x = torch.randn(*input_size, device=device)
     y, y_kd = mixer(x)
     print(y)
     print(x.shape, y.shape, y_kd.shape)
+
+    dim_spatial = 512
+    dim_channel = 196
+    mine_network = nn.Sequential(
+            nn.Linear(dim_channel + dim_spatial, 512),
+            nn.GELU(),
+            nn.Linear(512, 512),
+            nn.GELU(),
+            nn.Linear(512, 512),
+    )
+
+    mine_regularization(mixer, mine_network, x, 2)
