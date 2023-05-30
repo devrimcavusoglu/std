@@ -3,8 +3,10 @@
 """
 Train and eval functions used in main.py
 """
+import dataclasses
 import math
 import sys
+from contextlib import suppress
 from typing import Iterable, Optional
 
 import torch
@@ -12,8 +14,9 @@ import torch
 from timm.data import Mixup
 from timm.utils import accuracy, ModelEma
 
-from losses import DistillationLoss
-import utils
+from std.losses import DistillationLoss
+import std.utils as utils
+from std.models.std_mlp_mixer import STDMLPMixer
 
 
 def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
@@ -100,3 +103,72 @@ def evaluate(data_loader, model, device, amp_autocast=None):
           .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+
+
+@dataclasses.dataclass
+class DatasetArgs:
+    data_set: str = "CIFAR"
+    data_path: str = "None"
+    batch_size: int = 128
+    num_workers: int = 10
+    pin_mem = False
+    input_size = 224
+    drop: float = 0.0
+    color_jitter = 0.4
+    aa = "rand-m9-mstd0.5-inc1"
+    train_interpolation = "bicubic"
+    reprob: float = 0.25
+    remode: str = "pixel"
+    recount: int = 1
+
+
+if __name__ == "__main__":
+    from dataset import build_dataset
+
+    device = torch.device("cuda")
+
+    args = DatasetArgs()
+    dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
+    dataset_val, _ = build_dataset(is_train=False, args=args)
+
+    if True:  # args.distributed:
+        num_tasks = utils.get_world_size()
+        global_rank = utils.get_rank()
+        sampler_train = torch.utils.data.DistributedSampler(
+                dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
+        )
+        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+
+    data_loader_train = torch.utils.data.DataLoader(
+            dataset_train, sampler=sampler_train,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=True,
+    )
+
+    data_loader_val = torch.utils.data.DataLoader(
+            dataset_val, sampler=sampler_val,
+            batch_size=int(1.5 * args.batch_size),
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=False
+    )
+
+    data_loader_val = torch.utils.data.DataLoader(
+            dataset_val, sampler=sampler_val,
+            batch_size=int(1.5 * args.batch_size),
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=False
+    )
+
+    model = STDMLPMixer(image_size=args.input_size, channels=3, patch_size=16, dim=512, depth=1, dropout=args.drop, num_classes=100)
+    model.to(device)
+
+    amp_autocast = suppress  # do nothing
+    max_accuracy = 0.0
+    test_stats = evaluate(data_loader_val, model, device, amp_autocast=amp_autocast)
+    print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+    max_accuracy = max(max_accuracy, test_stats["acc1"])
+    print(f'Max accuracy: {max_accuracy:.2f}%')
