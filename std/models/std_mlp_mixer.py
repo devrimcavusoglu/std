@@ -18,12 +18,11 @@ class PreNormResidual(nn.Module):
 
 
 class FFN(nn.Module):
-    def __init__(self, dim, inner_dim_factor: float = 4, dropout: float = 0.0, mixing_type: str = "channel", distillation: bool = False):
+    def __init__(self, dim, hidden_dim: int, dropout: float = 0.0, mixing_type: str = "channel", distillation: bool = False):
         super().__init__()
-        inner_dim = int(dim * inner_dim_factor)
         layer_dense = nn.Linear if mixing_type == "channel" else partial(nn.Conv1d, kernel_size=1)
-        self.dense1 = layer_dense(dim, inner_dim)
-        self.dense2 = layer_dense(inner_dim, dim) if not distillation else layer_dense(inner_dim, 1)
+        self.dense1 = layer_dense(dim, hidden_dim)
+        self.dense2 = layer_dense(hidden_dim, dim) if not distillation else layer_dense(hidden_dim, 1)
         self.gelu = nn.GELU()
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
@@ -37,15 +36,17 @@ class FFN(nn.Module):
 
 
 class MixerBlock(nn.Module):
-    def __init__(self, dim, n_patches, spatial_scale: float = 4, channel_scale: float = 0.5, dropout: float = 0.0):
+    def __init__(self, dim, n_patches, spatial_scale: float = 0.5, channel_scale: float = 4, dropout: float = 0.0):
         super().__init__()
-        self.token_mixer = PreNormResidual(dim, FFN(n_patches, spatial_scale, dropout, mixing_type="spatial"))
-        self.channel_mixer = PreNormResidual(dim, FFN(dim, channel_scale, dropout, mixing_type="channel"))
+        token_hidden = int(dim * spatial_scale)
+        channel_hidden = int(dim * channel_scale)
+        self.token_mixer = PreNormResidual(dim, FFN(n_patches, token_hidden, dropout, mixing_type="token"))
+        self.channel_mixer = PreNormResidual(dim, FFN(dim, channel_hidden, dropout, mixing_type="channel"))
 
-        self.spatial_dist = FFN(n_patches + 1, spatial_scale, dropout, mixing_type="spatial", distillation=True)
+        self.spatial_dist = FFN(n_patches + 1, token_hidden, dropout, mixing_type="token", distillation=True)
         self.spatial_dist_norm = nn.LayerNorm(dim)
 
-        self.channel_dist = FFN(dim + 1, channel_scale, dropout, mixing_type="channel", distillation=True)
+        self.channel_dist = FFN(dim + 1, channel_hidden, dropout, mixing_type="channel", distillation=True)
         self.channel_dist_norm = nn.LayerNorm(dim + 1)
 
     def forward(self, z, ts, tc):
@@ -62,7 +63,7 @@ class MixerBlock(nn.Module):
 
 
 class STDMLPMixer(nn.Module):
-    def __init__(self, image_size, channels, patch_size, dim, depth, num_classes, f_spatial_expansion: float = 4, f_channel_expansion: float = 0.5, dropout = 0.):
+    def __init__(self, image_size, channels, patch_size, dim, depth, num_classes, f_spatial_expansion: float = 0.5, f_channel_expansion: float = 4, dropout = 0.):
         super().__init__()
         h, w = pair(image_size)
         assert (image_size % patch_size) == 0 and (w % h) == 0, "image must be divisible by patch size"
@@ -109,7 +110,7 @@ class STDMLPMixer(nn.Module):
 if __name__ == "__main__":
     import torch
     from torchinfo import summary
-    from std.mine import mine_regularization
+    from std.mine import build_mine, mine_regularization
 
     torch.manual_seed(3)
 
@@ -124,14 +125,8 @@ if __name__ == "__main__":
     print(y)
     print(x.shape, y.shape, y_kd.shape)
 
-    dim_spatial = 512
-    dim_channel = 196
-    mine_network = nn.Sequential(
-            nn.Linear(dim_channel + dim_spatial, 512),
-            nn.GELU(),
-            nn.Linear(512, 512),
-            nn.GELU(),
-            nn.Linear(512, 512),
-    )
-
-    mine_regularization(mixer, mine_network, x, 2)
+    # dim_spatial = 512
+    # dim_channel = 196
+    #
+    # model_optimizer, mine_network, mine_optimizer, objective = build_mine(mixer, dim_spatial, dim_channel, device)
+    # mine_regularization(mixer, mine_network, model_optimizer, mine_optimizer, objective, x)
