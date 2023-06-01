@@ -125,8 +125,8 @@ if __name__ == "__main__":
     print(y)
     print(x.shape, y.shape, y_kd.shape)
 
-    # dim_spatial = 512
-    # dim_channel = 196
-    #
-    # model_optimizer, mine_network, mine_optimizer, objective = build_mine(mixer, dim_spatial, dim_channel, device)
-    # mine_regularization(mixer, mine_network, model_optimizer, mine_optimizer, objective, x)
+    dim_spatial = 512
+    dim_channel = 196
+
+    model_optimizer, mine_network, mine_optimizer, objective = build_mine(mixer, dim_spatial, dim_channel, device)
+    mine_regularization(mixer, mine_network, model_optimizer, mine_optimizer, objective, x)

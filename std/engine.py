@@ -7,6 +7,7 @@ import dataclasses
 import math
 import random
 import sys
+import warnings
 from contextlib import suppress
 from typing import Iterable, Optional
 
@@ -31,17 +32,21 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
 
+    if n_mine_samples == 1:
+        # We cannot pick joint vs marginal with sample size = 1.
+        warnings.warn("Given `n_mine_samples` must be greater than 1 (if not 0), "
+                      "changing the number to be set as default (batch-size)")
+        n_mine_samples = None
+
     n_mine_samples = data_loader.batch_size if n_mine_samples is None else n_mine_samples
     mine_samples = None
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         mine_rnd = random.randint(0, samples.shape[0] - 1)
         mine_sample = samples[mine_rnd].expand(1, -1, -1, -1)
 
-        if n_mine_samples > 0:
+        if n_mine_samples > 1 and mine_samples.shape[0] < n_mine_samples:
             if mine_samples is None:
                 mine_samples = mine_sample
-            elif mine_samples.shape[0] >= n_mine_samples:
-                pass
             else:
                 mine_samples = torch.cat((mine_samples, mine_sample), 0)
 

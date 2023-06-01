@@ -32,6 +32,11 @@ def mine_regularization(model: nn.Module, mine_network: nn.Module, model_optimiz
 	MINE algorithm for regularizing the distilled spatial-channel tokens to disentangle from
 	`Algorithm 1`.
 
+	Notes:
+		Index permutation step is set as in the simplest form where the indices are permuted
+		by shifting to right (j = i + 1). This simple idea guarantees derangement (j != i).
+		However, the derangement might be refactored with better permutations.
+
 	Args:
 		model: STD vision model having distillation tokens.
 		mine_network: Statistics network that MINE uses in regularization.
