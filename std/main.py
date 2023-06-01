@@ -23,6 +23,7 @@ from std.engine import train_one_epoch, evaluate
 from std.losses import DistillationLoss
 from std.samplers import RASampler
 from std.models.std_mlp_mixer import STDMLPMixer
+from std.mine import build_mine, mine_regularization
 import std.utils as utils
 
 try:
@@ -57,12 +58,18 @@ def get_args_parser():
     # Model parameters
     parser.add_argument('--model', default='deit_base_patch16_224', type=str, metavar='MODEL',
                         help='Name of model to train')
-    parser.add_argument('--input-size', default=224, type=int, help='images input size')
-
+    parser.add_argument('--input-size', default=224, type=int, help='images input size, assumed to be a square image')
+    parser.add_argument('--channels', default=3, type=int, help='input channel size')
+    parser.add_argument('--patch-size', default=16, type=int, help='image patch size -> img_size/patch_size=n_grid')
+    parser.add_argument('--embedding-dim', default=512, type=int, help='token/spatial embedding dimension')
+    parser.add_argument('--depth', default=8, type=int, help='number of blocks, for MLPMixer: [S=8, B=12, L=24, H=32]')
     parser.add_argument('--drop', type=float, default=0.0, metavar='PCT',
                         help='Dropout rate (default: 0.)')
     parser.add_argument('--drop-path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
+
+    parser.add_argument('--n-mine-samples', type=int, default=None, help='Number of mine samples, default=batch size.'
+                                                                         '0 ignores MINE regularization.')
 
     parser.add_argument('--model-ema', action='store_true')
     parser.add_argument('--no-model-ema', action='store_false', dest='model_ema')
@@ -205,6 +212,7 @@ def main(args):
     if args.distillation_type != 'none' and args.finetune and not args.eval:
         raise NotImplementedError("Finetuning with distillation not yet supported")
 
+
     device = torch.device(args.device)
 
     # resolve AMP arguments based on PyTorch / Apex availability
@@ -300,7 +308,7 @@ def main(args):
     #     drop_block_rate=None,
     # )
     print(f"Creating model: STDMLPMixer")
-    model = STDMLPMixer(image_size=args.input_size, channels=3, patch_size=16, dim=512, depth=1, dropout=args.drop, num_classes=100)
+    model = STDMLPMixer(image_size=args.input_size, channels=args.channels, patch_size=args.patch_size, dim=args.embedding_dim, depth=args.depth, dropout=args.drop, num_classes=args.nb_classes)
 
     if args.flops:
         if not has_fvcore:
@@ -317,6 +325,7 @@ def main(args):
             print('=' * 30)
             print("fvcore MAdds: {:.3f} G".format(count))
 
+    # This part is not changed from DeiT, should be refactored for allMLP
     if args.finetune:
         if args.finetune.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
@@ -416,12 +425,6 @@ def main(args):
             num_classes=args.nb_classes,
             global_pool='avg',
         )
-        # if args.teacher_path.startswith('https'):
-        #     checkpoint = torch.hub.load_state_dict_from_url(
-        #         args.teacher_path, map_location='cpu', check_hash=True)
-        # else:
-        #     checkpoint = torch.load(args.teacher_path, map_location='cpu')
-        # teacher_model.load_state_dict(checkpoint['model'])
         teacher_model.to(device)
         teacher_model.eval()
 
@@ -453,6 +456,11 @@ def main(args):
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         return
 
+    # build MINE stuff
+    dim_spatial = args.embedding_dim
+    dim_channel = (args.input_size // args.patch_size) ** 2
+    model_regulizer, mine_network, mine_optimizer, objective = build_mine(model, dim_spatial, dim_channel, device)
+
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     max_accuracy = 0.0
@@ -460,13 +468,17 @@ def main(args):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
 
-        train_stats = train_one_epoch(
+        train_stats, mine_samples = train_one_epoch(
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
             args.clip_grad, model_ema, mixup_fn,
             set_training_mode=args.finetune == '',  # keep in eval mode during finetuning
             amp_autocast=amp_autocast,
+            n_mine_samples=args.n_mine_samples
         )
+        # regularize with MINE
+        if mine_samples is not None:
+            mine_regularization(model, mine_network, model_regulizer, mine_optimizer, objective, mine_samples)
 
         lr_scheduler.step(epoch)
         if args.output_dir:

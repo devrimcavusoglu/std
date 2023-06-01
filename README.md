@@ -1,6 +1,13 @@
 # STD
 Unoffical PyTorch implementation of the paper [Spatial-Channel Token Distillation for Vision MLPs](https://proceedings.mlr.press/v162/li22c.html).
 
+## Installation
+
+For installation create the environment by executing the following cmd in the project root
+
+```shell
+conda env create -f environment.yml
+```
 
 ## Training
 
@@ -13,11 +20,21 @@ python -m std.main --batch-size 64 --data-set CIFAR --data-path None --output_di
 ## TODO
 Taks to-do in the roadmap:
 
-- [x] MLP Mixer with STD
+### Phase 1
+- [X] MLP Mixer with STD
+- [X] Implement MINE Regularization
+- [ ] Refactor the training params to match with the paper & refactor params from transformer models to allMLP models
+- [ ] Train CIFAR-100
+
+### Phase 2
 - [ ] CycleMLP with STD
 - [ ] Multi-teacher implementation
 - [ ] Last/Intermediate layer distillation
-- [ ] Implement MINE
-- [ ] Train CIFAR-100
+- [ ] Train ImageNet-1k
 - [ ] Compare results with the paper
 
+## Notes
+
+Notes for implementation.
+
+- The number of samples that MINE algorithm uses is not specified in the paper. By default, it's equal to the batch size, but an argument added in the `main.py` as `n-mine-samples` to be specified if one wish to use different sample size other than the batch size for MINE. It can be set as 0 to not apply MINE regularization on the STD tokens. 

@@ -5,7 +5,9 @@ Train and eval functions used in main.py
 """
 import dataclasses
 import math
+import random
 import sys
+import warnings
 from contextlib import suppress
 from typing import Iterable, Optional
 
@@ -23,14 +25,31 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,
-                    set_training_mode=True, amp_autocast=None):
+                    set_training_mode=True, amp_autocast=None, n_mine_samples: int = None):
     model.train(set_training_mode)
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
 
+    if n_mine_samples == 1:
+        # We cannot pick joint vs marginal with sample size = 1.
+        warnings.warn("Given `n_mine_samples` must be greater than 1 (if not 0), "
+                      "changing the number to be set as default (batch-size)")
+        n_mine_samples = None
+
+    n_mine_samples = data_loader.batch_size if n_mine_samples is None else n_mine_samples
+    mine_samples = None
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
+        mine_rnd = random.randint(0, samples.shape[0] - 1)
+        mine_sample = samples[mine_rnd].expand(1, -1, -1, -1)
+
+        if n_mine_samples > 1 and mine_samples.shape[0] < n_mine_samples:
+            if mine_samples is None:
+                mine_samples = mine_sample
+            else:
+                mine_samples = torch.cat((mine_samples, mine_sample), 0)
+
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
 
@@ -69,7 +88,10 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    if mine_samples:
+        mine_samples = mine_samples.to(device, non_blocking=True)
+    stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    return stats, mine_samples
 
 
 @torch.no_grad()
