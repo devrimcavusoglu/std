@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Optional
 
 import torch
 from einops.layers.torch import Rearrange, Reduce
@@ -43,7 +44,7 @@ class FFN(nn.Module):
         return x
 
 
-class MixerBlock(nn.Module):
+class STDMixerBlock(nn.Module):
     def __init__(
         self, dim, n_patches, spatial_scale: float = 0.5, channel_scale: float = 4, dropout: float = 0.0
     ):
@@ -67,15 +68,16 @@ class MixerBlock(nn.Module):
         )
         self.channel_dist_norm = nn.LayerNorm(dim + 1)
 
-    def forward(self, z, ts, tc):
+    def forward(self, z: torch.Tensor, ts: Optional[torch.Tensor] = None, tc: Optional[torch.Tensor] = None):
         u = self.token_mixer(z)
         z = self.channel_mixer(u)
 
-        zts = torch.cat((z, ts), 1)
-        ts = self.spatial_dist(self.spatial_dist_norm(zts)) + ts
+        if ts is not None and tc is not None:
+            zts = torch.cat((z, ts), 1)
+            ts = self.spatial_dist(self.spatial_dist_norm(zts)) + ts
 
-        ztc = torch.cat((z, tc), -1)
-        tc = self.channel_dist(self.channel_dist_norm(ztc)) + tc
+            ztc = torch.cat((z, tc), -1)
+            tc = self.channel_dist(self.channel_dist_norm(ztc)) + tc
 
         return z, ts, tc
 
@@ -110,7 +112,7 @@ class STDMLPMixer(nn.Module):
         self.per_patch_fc = nn.Linear((patch_size ** 2) * channels, dim)
         self.mixer_blocks = nn.ModuleList(
             [
-                MixerBlock(dim, n_patches, f_spatial_expansion, f_channel_expansion, dropout)
+                STDMixerBlock(dim, n_patches, f_spatial_expansion, f_channel_expansion, dropout)
                 for _ in range(depth)
             ]
         )
@@ -124,8 +126,11 @@ class STDMLPMixer(nn.Module):
         x = self.patchifier(x)
         z = self.per_patch_fc(x)
         ts, tc = self.spatial_dist_token.expand(B, -1, -1), self.channel_dist_token.expand(B, -1, -1)
-        for layer in self.mixer_blocks:
-            z, ts, tc = layer(z, ts, tc)
+        for i, layer in enumerate(self.mixer_blocks):
+            if i+1 % 3 == 2 or i+1 == len(self.mixer_blocks):  # every 2/3 pos and always last layer
+                z, ts, tc = layer(z, ts, tc)
+            else:
+                z, _, _ = layer(z, None, None)
         z = self.ln(z)
         z = self.gap(z)
         return z, ts, tc
