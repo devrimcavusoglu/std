@@ -1,6 +1,7 @@
-from torch import nn
 from functools import partial
+
 from einops.layers.torch import Rearrange, Reduce
+from torch import nn
 
 pair = lambda x: x if isinstance(x, tuple) else (x, x)
 
@@ -17,10 +18,10 @@ class PreNormResidual(nn.Module):
 
 
 class MHInner(nn.Module):
-    def __init__(self, dim, expansion_factor = 4, dropout = 0., dense = nn.Linear, halve = True):
+    def __init__(self, dim, expansion_factor=4, dropout=0.0, dense=nn.Linear, halve=True):
         super().__init__()
         inner_dim = int(dim * expansion_factor)
-        out_dim = dim//2 if halve else dim
+        out_dim = dim // 2 if halve else dim
         self.dropout = nn.Dropout(dropout)
         self.dense1 = dense(dim, inner_dim)
         self.dense2 = dense(inner_dim, out_dim)
@@ -33,27 +34,42 @@ class MHInner(nn.Module):
 
 
 class MHMixer(nn.Module):
-    def __init__(self, image_size, patch_size, dim, depth=1, num_classes=1000, expansion_factor=4, expansion_factor_token=0.5, dropout=0.):
+    def __init__(
+        self,
+        image_size,
+        patch_size,
+        dim,
+        depth=1,
+        num_classes=1000,
+        expansion_factor=4,
+        expansion_factor_token=0.5,
+        dropout=0.0,
+    ):
         super().__init__()
         image_h, image_w = pair(image_size)
-        assert (image_h % patch_size) == 0 and (image_w % patch_size) == 0, 'image must be divisible by patch size'
+        assert (image_h % patch_size) == 0 and (
+            image_w % patch_size
+        ) == 0, "image must be divisible by patch size"
         num_patches = (image_h // patch_size) * (image_w // patch_size)
         self.depth = depth
 
         self.tokenizer = nn.Sequential(
-                nn.Conv2d(3, dim, 1),
-                nn.Conv2d(dim, dim, patch_size, stride=patch_size, groups=dim),
-                Rearrange('b c p1 p2 -> b (p1 p2) c'),
+            nn.Conv2d(3, dim, 1),
+            nn.Conv2d(dim, dim, patch_size, stride=patch_size, groups=dim),
+            Rearrange("b c p1 p2 -> b (p1 p2) c"),
         )
 
         chan_first, chan_last = partial(nn.Conv1d, kernel_size=1), nn.Linear
-        self.mh_inner_token = PreNormResidual(dim, MHInner(num_patches, expansion_factor, dropout, dense=chan_first, halve=False))
-        self.mh_inner_channel = PreNormResidual(dim, MHInner(dim, expansion_factor_token, dropout, dense=chan_last, halve=False))
-        self.mh_fuse = PreNormResidual(dim, MHInner(dim, expansion_factor_token, dropout, dense=chan_last, halve=False))
-        self.output = nn.Sequential(
-                nn.LayerNorm(dim),
-                Reduce('b n c -> b c', 'mean')
+        self.mh_inner_token = PreNormResidual(
+            dim, MHInner(num_patches, expansion_factor, dropout, dense=chan_first, halve=False)
         )
+        self.mh_inner_channel = PreNormResidual(
+            dim, MHInner(dim, expansion_factor_token, dropout, dense=chan_last, halve=False)
+        )
+        self.mh_fuse = PreNormResidual(
+            dim, MHInner(dim, expansion_factor_token, dropout, dense=chan_last, halve=False)
+        )
+        self.output = nn.Sequential(nn.LayerNorm(dim), Reduce("b n c -> b c", "mean"))
         self.classifier = nn.Linear(dim, num_classes)
 
     def forward(self, x):

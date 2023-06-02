@@ -38,3 +38,18 @@ Taks to-do in the roadmap:
 Notes for implementation.
 
 - The number of samples that MINE algorithm uses is not specified in the paper. By default, it's equal to the batch size, but an argument added in the `main.py` as `n-mine-samples` to be specified if one wish to use different sample size other than the batch size for MINE. It can be set as 0 to not apply MINE regularization on the STD tokens. 
+
+
+## Contribution
+
+To check if codestyle pass use
+
+```shell
+python -m scripts.run_code_style check
+```
+
+To reformat the codebase use
+
+```shell
+python -m scripts.run_code_style format
+```

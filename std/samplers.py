@@ -1,8 +1,9 @@
 # Copyright (c) 2015-present, Facebook, Inc.
 # All rights reserved.
+import math
+
 import torch
 import torch.distributed as dist
-import math
 
 
 class RASampler(torch.utils.data.Sampler):
@@ -43,14 +44,14 @@ class RASampler(torch.utils.data.Sampler):
 
         # add extra samples to make it evenly divisible
         indices = [ele for ele in indices for i in range(3)]
-        indices += indices[:(self.total_size - len(indices))]
+        indices += indices[: (self.total_size - len(indices))]
         assert len(indices) == self.total_size
 
         # subsample
-        indices = indices[self.rank:self.total_size:self.num_replicas]
+        indices = indices[self.rank : self.total_size : self.num_replicas]
         assert len(indices) == self.num_samples
 
-        return iter(indices[:self.num_selected_samples])
+        return iter(indices[: self.num_selected_samples])
 
     def __len__(self):
         return self.num_selected_samples

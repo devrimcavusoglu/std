@@ -12,30 +12,41 @@ from contextlib import suppress
 from typing import Iterable, Optional
 
 import torch
-
 from timm.data import Mixup
-from timm.utils import accuracy, ModelEma
+from timm.utils import ModelEma, accuracy
 
-from std.losses import DistillationLoss
 import std.utils as utils
+from std.losses import DistillationLoss
 from std.models.std_mlp_mixer import STDMLPMixer
 
 
-def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
-                    data_loader: Iterable, optimizer: torch.optim.Optimizer,
-                    device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,
-                    model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,
-                    set_training_mode=True, amp_autocast=None, n_mine_samples: int = None):
+def train_one_epoch(
+    model: torch.nn.Module,
+    criterion: DistillationLoss,
+    data_loader: Iterable,
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+    epoch: int,
+    loss_scaler,
+    max_norm: float = 0,
+    model_ema: Optional[ModelEma] = None,
+    mixup_fn: Optional[Mixup] = None,
+    set_training_mode=True,
+    amp_autocast=None,
+    n_mine_samples: int = None,
+):
     model.train(set_training_mode)
     metric_logger = utils.MetricLogger(delimiter="  ")
-    metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    header = 'Epoch: [{}]'.format(epoch)
+    metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value:.6f}"))
+    header = "Epoch: [{}]".format(epoch)
     print_freq = 10
 
     if n_mine_samples == 1:
         # We cannot pick joint vs marginal with sample size = 1.
-        warnings.warn("Given `n_mine_samples` must be greater than 1 (if not 0), "
-                      "changing the number to be set as default (batch-size)")
+        warnings.warn(
+            "Given `n_mine_samples` must be greater than 1 (if not 0), "
+            "changing the number to be set as default (batch-size)"
+        )
         n_mine_samples = None
 
     n_mine_samples = data_loader.batch_size if n_mine_samples is None else n_mine_samples
@@ -69,10 +80,15 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         optimizer.zero_grad()
 
         # this attribute is added by timm on one optimizer (adahessian)
-        is_second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
+        is_second_order = hasattr(optimizer, "is_second_order") and optimizer.is_second_order
         if loss_scaler is not None:
-            loss_scaler(loss, optimizer, clip_grad=max_norm,
-                        parameters=model.parameters(), create_graph=is_second_order)
+            loss_scaler(
+                loss,
+                optimizer,
+                clip_grad=max_norm,
+                parameters=model.parameters(),
+                create_graph=is_second_order,
+            )
         else:
             loss.backward(create_graph=is_second_order)
             if max_norm is not None:
@@ -99,7 +115,7 @@ def evaluate(data_loader, model, device, amp_autocast=None):
     criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
-    header = 'Test:'
+    header = "Test:"
 
     # switch to evaluation mode
     model.eval()
@@ -117,12 +133,15 @@ def evaluate(data_loader, model, device, amp_autocast=None):
 
         batch_size = images.shape[0]
         metric_logger.update(loss=loss.item())
-        metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
-        metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+        metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
+        metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
-          .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
+    print(
+        "* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}".format(
+            top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss
+        )
+    )
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
@@ -157,35 +176,46 @@ if __name__ == "__main__":
         num_tasks = utils.get_world_size()
         global_rank = utils.get_rank()
         sampler_train = torch.utils.data.DistributedSampler(
-                dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
+            dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
         )
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
     data_loader_train = torch.utils.data.DataLoader(
-            dataset_train, sampler=sampler_train,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            pin_memory=args.pin_mem,
-            drop_last=True,
+        dataset_train,
+        sampler=sampler_train,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        pin_memory=args.pin_mem,
+        drop_last=True,
     )
 
     data_loader_val = torch.utils.data.DataLoader(
-            dataset_val, sampler=sampler_val,
-            batch_size=int(1.5 * args.batch_size),
-            num_workers=args.num_workers,
-            pin_memory=args.pin_mem,
-            drop_last=False
+        dataset_val,
+        sampler=sampler_val,
+        batch_size=int(1.5 * args.batch_size),
+        num_workers=args.num_workers,
+        pin_memory=args.pin_mem,
+        drop_last=False,
     )
 
     data_loader_val = torch.utils.data.DataLoader(
-            dataset_val, sampler=sampler_val,
-            batch_size=int(1.5 * args.batch_size),
-            num_workers=args.num_workers,
-            pin_memory=args.pin_mem,
-            drop_last=False
+        dataset_val,
+        sampler=sampler_val,
+        batch_size=int(1.5 * args.batch_size),
+        num_workers=args.num_workers,
+        pin_memory=args.pin_mem,
+        drop_last=False,
     )
 
-    model = STDMLPMixer(image_size=args.input_size, channels=3, patch_size=16, dim=512, depth=1, dropout=args.drop, num_classes=100)
+    model = STDMLPMixer(
+        image_size=args.input_size,
+        channels=3,
+        patch_size=16,
+        dim=512,
+        depth=1,
+        dropout=args.drop,
+        num_classes=100,
+    )
     model.to(device)
 
     amp_autocast = suppress  # do nothing
@@ -193,4 +223,4 @@ if __name__ == "__main__":
     test_stats = evaluate(data_loader_val, model, device, amp_autocast=amp_autocast)
     print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
     max_accuracy = max(max_accuracy, test_stats["acc1"])
-    print(f'Max accuracy: {max_accuracy:.2f}%')
+    print(f"Max accuracy: {max_accuracy:.2f}%")
