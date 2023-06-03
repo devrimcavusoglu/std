@@ -68,7 +68,9 @@ class STDMixerBlock(nn.Module):
         )
         self.channel_dist_norm = nn.LayerNorm(dim + 1)
 
-    def forward(self, z: torch.Tensor, ts: Optional[torch.Tensor] = None, tc: Optional[torch.Tensor] = None):
+    def forward(
+        self, z: torch.Tensor, ts: Optional[torch.Tensor] = None, tc: Optional[torch.Tensor] = None
+    ):
         u = self.token_mixer(z)
         z = self.channel_mixer(u)
 
@@ -127,7 +129,7 @@ class STDMLPMixer(nn.Module):
         z = self.per_patch_fc(x)
         ts, tc = self.spatial_dist_token.expand(B, -1, -1), self.channel_dist_token.expand(B, -1, -1)
         for i, layer in enumerate(self.mixer_blocks):
-            if i+1 % 3 == 2 or i+1 == len(self.mixer_blocks):  # every 2/3 pos and always last layer
+            if i + 1 % 3 == 2 or i + 1 == len(self.mixer_blocks):  # every 2/3 pos and always last layer
                 z, ts, tc = layer(z, ts, tc)
             else:
                 z, _, _ = layer(z, None, None)

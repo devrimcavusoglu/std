@@ -12,6 +12,7 @@ from contextlib import suppress
 from typing import Iterable, Optional
 
 import torch
+from neptune import Run
 from timm.data import Mixup
 from timm.utils import ModelEma, accuracy
 
@@ -34,9 +35,10 @@ def train_one_epoch(
     set_training_mode=True,
     amp_autocast=None,
     n_mine_samples: int = None,
+    neptune_run: Optional[Run] = None
 ):
     model.train(set_training_mode)
-    metric_logger = utils.MetricLogger(delimiter="  ")
+    metric_logger = utils.MetricLogger(delimiter="  ", neptune_run=neptune_run)
     metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value:.6f}"))
     header = "Epoch: [{}]".format(epoch)
     print_freq = 10
@@ -55,7 +57,7 @@ def train_one_epoch(
         mine_rnd = random.randint(0, samples.shape[0] - 1)
         mine_sample = samples[mine_rnd].expand(1, -1, -1, -1)
 
-        if n_mine_samples > 1 and mine_samples.shape[0] < n_mine_samples:
+        if n_mine_samples > 1 and (mine_samples is not None and mine_samples.shape[0] < n_mine_samples):
             if mine_samples is None:
                 mine_samples = mine_sample
             else:
@@ -111,10 +113,10 @@ def train_one_epoch(
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, amp_autocast=None):
+def evaluate(data_loader, model, device, amp_autocast=None, neptune_run: Optional = None):
     criterion = torch.nn.CrossEntropyLoss()
 
-    metric_logger = utils.MetricLogger(delimiter="  ")
+    metric_logger = utils.MetricLogger(delimiter="  ", neptune_run=neptune_run, is_train=False)
     header = "Test:"
 
     # switch to evaluation mode
@@ -144,83 +146,3 @@ def evaluate(data_loader, model, device, amp_autocast=None):
     )
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-
-
-@dataclasses.dataclass
-class DatasetArgs:
-    data_set: str = "CIFAR"
-    data_path: str = "None"
-    batch_size: int = 128
-    num_workers: int = 10
-    pin_mem = False
-    input_size = 224
-    drop: float = 0.0
-    color_jitter = 0.4
-    aa = "rand-m9-mstd0.5-inc1"
-    train_interpolation = "bicubic"
-    reprob: float = 0.25
-    remode: str = "pixel"
-    recount: int = 1
-
-
-if __name__ == "__main__":
-    from dataset import build_dataset
-
-    device = torch.device("cuda")
-
-    args = DatasetArgs()
-    dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
-    dataset_val, _ = build_dataset(is_train=False, args=args)
-
-    if True:  # args.distributed:
-        num_tasks = utils.get_world_size()
-        global_rank = utils.get_rank()
-        sampler_train = torch.utils.data.DistributedSampler(
-            dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
-        )
-        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
-
-    data_loader_train = torch.utils.data.DataLoader(
-        dataset_train,
-        sampler=sampler_train,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        drop_last=True,
-    )
-
-    data_loader_val = torch.utils.data.DataLoader(
-        dataset_val,
-        sampler=sampler_val,
-        batch_size=int(1.5 * args.batch_size),
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        drop_last=False,
-    )
-
-    data_loader_val = torch.utils.data.DataLoader(
-        dataset_val,
-        sampler=sampler_val,
-        batch_size=int(1.5 * args.batch_size),
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        drop_last=False,
-    )
-
-    model = STDMLPMixer(
-        image_size=args.input_size,
-        channels=3,
-        patch_size=16,
-        dim=512,
-        depth=1,
-        dropout=args.drop,
-        num_classes=100,
-    )
-    model.to(device)
-
-    amp_autocast = suppress  # do nothing
-    max_accuracy = 0.0
-    test_stats = evaluate(data_loader_val, model, device, amp_autocast=amp_autocast)
-    print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
-    max_accuracy = max(max_accuracy, test_stats["acc1"])
-    print(f"Max accuracy: {max_accuracy:.2f}%")

@@ -3,6 +3,7 @@
 import json
 import os
 
+import PIL.Image
 import datasets
 from timm.data import create_transform
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
@@ -24,10 +25,13 @@ class HFDataset(Dataset):
 
     def __getitem__(self, idx):
         instance = self.data_source[idx]
+        image: PIL.Image.Image = instance["image"]
+        if image.mode != "RGB":
+            image = image.convert("RGB")
         if self.pipeline is not None:
-            instance["image"] = self.pipeline(instance["image"])
+            image = self.pipeline(image)
 
-        return instance["image"], instance["label"]
+        return image, instance["label"]
 
 
 class INatDataset(ImageFolder):
@@ -85,20 +89,28 @@ def build_dataset(is_train, args):
     transform = build_transform(is_train, args)
 
     if args.data_set == "CIFAR":
-        dataset = pt_datasets.CIFAR100(args.data_path, train=is_train, transform=transform, download=True)
+        dataset = pt_datasets.CIFAR100(
+            args.data_path, train=is_train, transform=transform, download=True
+        )
         nb_classes = 100
     elif args.data_set == "IMNET":
         if not args.mcloader:
             root = os.path.join(args.data_path, "train" if is_train else "valid")
             dataset = pt_datasets.ImageFolder(root, transform=transform)
         else:
-            dataset = HFDataset("imagenet-1k", split="train" if is_train else "valid", pipeline=transform)
+            dataset = HFDataset(
+                "imagenet-1k", split="train" if is_train else "valid", pipeline=transform
+            )
         nb_classes = 1000
     elif args.data_set == "IMNET-TINY":
         if is_train:
-            dataset = HFDataset("Multimodal-Fatima/Imagenet1k_sample_train", split="train", pipeline=transform)
+            dataset = HFDataset(
+                "Multimodal-Fatima/Imagenet1k_sample_train", split="train", pipeline=transform
+            )
         else:
-            dataset = HFDataset("Multimodal-Fatima/Imagenet1k_sample_validation", split="validation", pipeline=transform)
+            dataset = HFDataset(
+                "Multimodal-Fatima/Imagenet1k_sample_validation", split="validation", pipeline=transform
+            )
         nb_classes = 1000
     elif args.data_set == "INAT":
         dataset = INatDataset(

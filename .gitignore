@@ -134,3 +134,4 @@ dmypy.json
 # MISC
 /data
 /outputs
+neptune.cfg

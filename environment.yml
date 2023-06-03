@@ -18,7 +18,7 @@ dependencies:
     - fire
     - flake8==3.9.2
     - isort==5.9.2
-    - neptune-client
+    - neptune==1.2.0
     - notebook
     - timm==0.6.13
     - torchinfo==1.7.0
