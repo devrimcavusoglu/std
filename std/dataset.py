@@ -109,7 +109,7 @@ def build_dataset(is_train, args):
             )
         else:
             dataset = HFDataset(
-                "Multimodal-Fatima/Imagenet1k_sample_validation", split="validation", pipeline=transform
+                "theodor1289/imagenet-1k_tiny", split="train", pipeline=transform
             )
         nb_classes = 1000
     elif args.data_set == "INAT":

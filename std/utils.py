@@ -95,7 +95,7 @@ class MetricLogger(object):
             if isinstance(v, torch.Tensor):
                 v = v.item()
             assert isinstance(v, (float, int))
-            self._log_neptune(k, v, k in self.meters)
+            self._log_neptune(k, v)
             self.meters[k].update(v)
 
     def __getattr__(self, attr):
@@ -111,17 +111,14 @@ class MetricLogger(object):
             loss_str.append("{}: {}".format(name, str(meter)))
         return self.delimiter.join(loss_str)
 
-    def _log_neptune(self, key, val, append: bool):
+    def _log_neptune(self, key, val):
         """
         Logs to neptune if neptune_run is given, silently passes otherwise.
         """
         prefix = "train/" if self.is_train else "val/"
         name = prefix + key
         if self.neptune_run:
-            if append:
-                self.neptune_run[name].append(val)
-            else:
-                self.neptune_run[name] = val
+            self.neptune_run[name].append(val)
 
     def synchronize_between_processes(self):
         for meter in self.meters.values():

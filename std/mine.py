@@ -1,4 +1,7 @@
+from typing import Optional
+
 import torch
+from neptune import Run
 from torch import Tensor, nn
 from torch.nn.modules.loss import _Loss
 from torch.optim import SGD, Optimizer
@@ -34,6 +37,7 @@ def mine_regularization(
     mine_optimizer: Optimizer,
     objective: MINEObjective,
     x: Tensor,
+    neptune_run: Optional[Run] = None
 ):
     """
     MINE algorithm for regularizing the distilled spatial-channel tokens to disentangle from
@@ -77,6 +81,8 @@ def mine_regularization(
     model_optimizer.zero_grad()
     J = objective(joint_outputs, marginal_outputs)
     print(f"MINE Objective: {J:.5f}")
+    if neptune_run:
+        neptune_run["train/mine_objective"].append(J.item())
     J.backward()
     mine_optimizer.step()  # apply gradient ascent
     model_optimizer.step()  # apply gradient descent

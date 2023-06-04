@@ -190,7 +190,7 @@ def train(
         # regularize with MINE
         if mine_samples is not None:
             mine_regularization(
-                model, mine_network, model_regulizer, mine_optimizer, objective, mine_samples
+                model, mine_network, model_regulizer, mine_optimizer, objective, mine_samples, neptune_run=neptune_run
             )
 
         lr_scheduler.step(epoch)
@@ -203,14 +203,14 @@ def train(
                         "optimizer": optimizer.state_dict(),
                         "lr_scheduler": lr_scheduler.state_dict(),
                         "epoch": epoch,
-                        "model_ema": get_state_dict(model_ema),
+                        # "model_ema": get_state_dict(model_ema),
                         "scaler": loss_scaler.state_dict() if loss_scaler is not None else None,
                         "args": args,
                     },
                     checkpoint_path,
                 )
 
-        test_stats = evaluate(data_loader_val, model, device, amp_autocast=amp_autocast)
+        test_stats = evaluate(data_loader_val, model, device, amp_autocast=amp_autocast, neptune_run=neptune_run)
         print(
             f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%"
         )

@@ -3,22 +3,19 @@
 """
 Train and eval functions used in main.py
 """
-import dataclasses
 import math
-import random
 import sys
 import warnings
-from contextlib import suppress
 from typing import Iterable, Optional
 
 import torch
 from neptune import Run
+import numpy as np
 from timm.data import Mixup
 from timm.utils import ModelEma, accuracy
 
 import std.utils as utils
 from std.losses import DistillationLoss
-from std.models.std_mlp_mixer import STDMLPMixer
 
 
 def train_one_epoch(
@@ -52,16 +49,13 @@ def train_one_epoch(
         n_mine_samples = None
 
     n_mine_samples = data_loader.batch_size if n_mine_samples is None else n_mine_samples
-    mine_samples = None
+    mine_samples = []
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
-        mine_rnd = random.randint(0, samples.shape[0] - 1)
-        mine_sample = samples[mine_rnd].expand(1, -1, -1, -1)
+        mine_rnd = np.random.randint(data_loader.batch_size, size=data_loader.batch_size // len(data_loader))
+        mine_sample = samples[mine_rnd].expand(len(mine_rnd), -1, -1, -1)
 
-        if n_mine_samples > 1 and (mine_samples is not None and mine_samples.shape[0] < n_mine_samples):
-            if mine_samples is None:
-                mine_samples = mine_sample
-            else:
-                mine_samples = torch.cat((mine_samples, mine_sample), 0)
+        if n_mine_samples > 1 and len(mine_samples) < n_mine_samples:
+            mine_samples.append(mine_sample)
 
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
@@ -106,7 +100,8 @@ def train_one_epoch(
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
-    if mine_samples:
+    if len(mine_samples) > 0:
+        mine_samples = torch.cat(mine_samples, 0)
         mine_samples = mine_samples.to(device, non_blocking=True)
     stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
     return stats, mine_samples
