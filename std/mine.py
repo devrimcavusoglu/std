@@ -11,8 +11,14 @@ class MINEObjective(_Loss):
     def __init__(self, size_average=None, reduce=None, reduction: str = "mean") -> None:
         super(MINEObjective, self).__init__(size_average, reduce, reduction)
 
-    def forward(self, joint: Tensor, marginal: Tensor) -> Tensor:
-        return torch.mean(joint) - torch.log(torch.mean(torch.exp(marginal)))
+    def forward(self, joint: Tensor, marginal: Tensor, cached_avg: float = None, momentum: float = 0.99) -> Tensor:
+        joint_avg = torch.mean(joint)
+        marginal_avg = torch.mean(torch.exp(marginal))
+        mine = joint_avg - torch.log(marginal_avg)
+
+        # EMA & bias correction
+        # cached_avg = (1 - momentum) * marginal_avg + momentum * cached_avg
+        return mine
 
 
 def build_mine(model: nn.Module, dim_spatial: int, dim_channel: int, device: torch.device):
@@ -24,8 +30,8 @@ def build_mine(model: nn.Module, dim_spatial: int, dim_channel: int, device: tor
         nn.Linear(512, 1),
     )
     mine_network.to(device)
-    model_optimizer = SGD(params=model.parameters(), lr=1.0, momentum=0)
-    mine_optimizer = SGD(params=mine_network.parameters(), lr=1.0, momentum=0, maximize=True)
+    model_optimizer = SGD(params=model.parameters(), lr=0.01, momentum=0)
+    mine_optimizer = SGD(params=mine_network.parameters(), lr=0.01, momentum=0, maximize=True)
     objective = MINEObjective()
     return model_optimizer, mine_network, mine_optimizer, objective
 

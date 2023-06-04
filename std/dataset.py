@@ -94,13 +94,9 @@ def build_dataset(is_train, args):
         )
         nb_classes = 100
     elif args.data_set == "IMNET":
-        if not args.mcloader:
-            root = os.path.join(args.data_path, "train" if is_train else "valid")
-            dataset = pt_datasets.ImageFolder(root, transform=transform)
-        else:
-            dataset = HFDataset(
-                "imagenet-1k", split="train" if is_train else "valid", pipeline=transform
-            )
+        dataset = HFDataset(
+            "imagenet-1k", split="train" if is_train else "validation", pipeline=transform
+        )
         nb_classes = 1000
     elif args.data_set == "IMNET-TINY":
         if is_train:

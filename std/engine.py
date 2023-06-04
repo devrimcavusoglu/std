@@ -138,8 +138,8 @@ def evaluate(data_loader, model, device, amp_autocast=None, neptune_run: Optiona
             top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss
         )
     )
-    metric_logger.log_neptune(key="acc@1", val=metric_logger.meters["acc1"].value)
-    metric_logger.log_neptune(key="acc@5", val=metric_logger.meters["acc5"].value)
-    metric_logger.log_neptune(key="loss", val=metric_logger.meters["loss"].value)
+    metric_logger.log_neptune(key="acc@1", val=metric_logger.acc1.global_avg)
+    metric_logger.log_neptune(key="acc@5", val=metric_logger.acc5.global_avg)
+    metric_logger.log_neptune(key="loss", val=metric_logger.loss.global_avg)
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
