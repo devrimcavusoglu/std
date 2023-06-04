@@ -102,7 +102,6 @@ def train_one_epoch(
     print("Averaged stats:", metric_logger)
     if len(mine_samples) > 0:
         mine_samples = torch.cat(mine_samples, 0)
-        mine_samples = mine_samples.to(device, non_blocking=True)
     stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
     return stats, mine_samples
 

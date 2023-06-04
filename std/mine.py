@@ -62,6 +62,9 @@ def mine_regularization(
     print("Optimizing MINE..")
     model.train()
     mine_network.train()
+    for p in model.parameters():
+        model_device = p.device
+    x = x.to(model_device, non_blocking=True)
     B = x.shape[0]
     _, ts, tc = model.forward_features(x)
 
