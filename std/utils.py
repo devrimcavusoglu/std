@@ -95,7 +95,8 @@ class MetricLogger(object):
             if isinstance(v, torch.Tensor):
                 v = v.item()
             assert isinstance(v, (float, int))
-            self._log_neptune(k, v)
+            if self.is_train:
+                self.log_neptune(k, v)
             self.meters[k].update(v)
 
     def __getattr__(self, attr):
@@ -111,7 +112,7 @@ class MetricLogger(object):
             loss_str.append("{}: {}".format(name, str(meter)))
         return self.delimiter.join(loss_str)
 
-    def _log_neptune(self, key, val):
+    def log_neptune(self, key, val):
         """
         Logs to neptune if neptune_run is given, silently passes otherwise.
         """
