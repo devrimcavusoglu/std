@@ -52,7 +52,7 @@ def train_one_epoch(
     mine_samples = []
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         if n_mine_samples > 1 and len(mine_samples) < n_mine_samples:
-            sample_size = int(np.ceil(data_loader.batch_size // len(data_loader)))
+            sample_size = int(np.ceil(data_loader.batch_size / len(data_loader)))
             mine_rnd = np.random.randint(data_loader.batch_size, size=sample_size)
             mine_sample = samples[mine_rnd].expand(len(mine_rnd), -1, -1, -1)
             mine_samples.append(mine_sample)
