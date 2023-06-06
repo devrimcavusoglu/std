@@ -96,11 +96,15 @@ class STDMLPMixer(nn.Module):
         f_spatial_expansion: float = 0.5,
         f_channel_expansion: float = 4,
         dropout=0.0,
+        distill_intermediate: bool = False
     ):
         super().__init__()
         h, w = pair(image_size)
         assert (image_size % patch_size) == 0 and (w % h) == 0, "image must be divisible by patch size"
         n_patches = (h // patch_size) * (w // patch_size)
+
+        self.distill_intermediate = distill_intermediate
+        self.depth = depth
 
         self.spatial_dist_token = nn.Parameter(torch.zeros(1, 1, dim))
         self.channel_dist_token = nn.Parameter(torch.zeros(1, n_patches, 1))
@@ -129,10 +133,16 @@ class STDMLPMixer(nn.Module):
         z = self.per_patch_fc(x)
         ts, tc = self.spatial_dist_token.expand(B, -1, -1), self.channel_dist_token.expand(B, -1, -1)
         for i, layer in enumerate(self.mixer_blocks):
-            if i + 1 % 3 == 2 or i + 1 == len(self.mixer_blocks):  # every 2/3 pos and always last layer
-                z, ts, tc = layer(z, ts, tc)
+            if not self.distill_intermediate:  # distill only last layer
+                if (i + 1) == self.depth:
+                    z, ts, tc = layer(z, ts, tc)
+                else:
+                    z, _, _ = layer(z, None, None)
             else:
-                z, _, _ = layer(z, None, None)
+                if (i + 1) % 3 == 2 or i + 1 == self.depth:  # every 2/3 pos and always last layer
+                    z, ts, tc = layer(z, ts, tc)
+                else:
+                    z, _, _ = layer(z, None, None)
         z = self.ln(z)
         z = self.gap(z)
         return z, ts, tc
@@ -159,7 +169,8 @@ if __name__ == "__main__":
     device = torch.device("cuda")
     image_size = 224
     mixer = STDMLPMixer(
-        image_size=image_size, channels=3, patch_size=16, dim=512, depth=2, num_classes=10
+        image_size=image_size, channels=3, patch_size=16, dim=512, depth=8, num_classes=10,
+            distill_intermediate=True
     ).to(device)
     input_size = (2, 3, image_size, image_size)  # b,c,h,w
     summary(mixer, input_size=input_size, device=device)
@@ -169,10 +180,10 @@ if __name__ == "__main__":
     print(y)
     print(x.shape, y.shape, y_kd.shape)
 
-    dim_spatial = 512
-    dim_channel = 196
-
-    model_optimizer, mine_network, mine_optimizer, objective = build_mine(
-        mixer, dim_spatial, dim_channel, device
-    )
-    mine_regularization(mixer, mine_network, model_optimizer, mine_optimizer, objective, x)
+    # dim_spatial = 512
+    # dim_channel = 196
+    #
+    # model_optimizer, mine_network, mine_optimizer, objective = build_mine(
+    #     mixer, dim_spatial, dim_channel, device
+    # )
+    # mine_regularization(mixer, mine_network, model_optimizer, mine_optimizer, objective, x)

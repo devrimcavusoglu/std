@@ -132,6 +132,7 @@ def get_model(args):
             depth=args.depth,
             dropout=args.drop,
             num_classes=args.nb_classes,
+            distill_intermediate=args.distill_intermediate
         )
     else:
         print("Only MLP-Mixer is available currently, others will come soon!")
@@ -416,8 +417,8 @@ def main(args):
         teacher_model = create_model(
             args.teacher_model,
             pretrained=True,
-            num_classes=args.nb_classes,
-            global_pool="avg",
+            # num_classes=args.nb_classes,
+            # global_pool="avg",
         )
         teacher_model.to(device)
         teacher_model.eval()

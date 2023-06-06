@@ -248,6 +248,9 @@ def get_args_parser():
     )
     parser.add_argument("--distillation-alpha", default=0.5, type=float, help="")
     parser.add_argument("--distillation-tau", default=1.0, type=float, help="")
+    parser.add_argument("--distill-intermediate", action="store_true", default=False,
+                        help="By default only last layer distillation is applied."
+                             "Set this parameter to distill also intermediate layers.")
 
     # * Finetuning params
     parser.add_argument("--finetune", default="", help="finetune from checkpoint")
