@@ -414,12 +414,17 @@ def main(args):
     if args.distillation_type != "none":
         # assert args.teacher_path, 'need to specify teacher-path when using distillation'
         print(f"Creating teacher model: {args.teacher_model}")
-        teacher_model = create_model(
-            args.teacher_model,
-            pretrained=True,
-            # num_classes=args.nb_classes,
-            # global_pool="avg",
-        )
+        if args.data_set == "CIFAR":
+            teacher_model = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_resnet56", pretrained=True)
+        elif args.data_set == "INAT":
+            pass
+        else:  # IMNET
+            teacher_model = create_model(
+                args.teacher_model,
+                pretrained=True,
+                # num_classes=args.nb_classes,
+                # global_pool="avg",
+            )
         teacher_model.to(device)
         teacher_model.eval()
 
