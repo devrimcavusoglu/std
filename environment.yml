@@ -15,10 +15,11 @@ dependencies:
     - click==8.0.4
     - deepdiff==6.3.0
     - datasets==2.11.0
+    - einops==0.6.0
     - fire
     - flake8==3.9.2
     - isort==5.9.2
-    - neptune-client
+    - neptune==1.2.0
     - notebook
     - timm==0.6.13
     - torchinfo==1.7.0

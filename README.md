@@ -29,6 +29,7 @@ Taks to-do in the roadmap:
 ### Phase 2
 - [ ] CycleMLP with STD
 - [ ] Multi-teacher implementation
+- [ ] Confidence reweighting term for multi-teacher setting
 - [ ] Last/Intermediate layer distillation
 - [ ] Train ImageNet-1k
 - [ ] Compare results with the paper
@@ -37,7 +38,14 @@ Taks to-do in the roadmap:
 
 Notes for implementation.
 
+### Notes regarding MINE Regularization implementation:
+
 - The number of samples that MINE algorithm uses is not specified in the paper. By default, it's equal to the batch size, but an argument added in the `main.py` as `n-mine-samples` to be specified if one wish to use different sample size other than the batch size for MINE. It can be set as 0 to not apply MINE regularization on the STD tokens. 
+- It is not explicitly mentioned in the paper when the MINE regularization is applied on the weights, but we assumed that it is applied after casual weight updates (training).
+
+### Notes regarding experimental setup
+
+- In the paper, it's stated that "_the distillation tokens are inserted 2/3 positions_". It is assumed in the implementation that they refer to every 2nd of 3rd **network block** and not a single layer (e.g. Mixer block for MLPMixer).
 
 
 ## Contribution

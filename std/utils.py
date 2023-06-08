@@ -9,10 +9,12 @@ import datetime
 import io
 import os
 import time
-import typing
 from collections import Counter, defaultdict, deque
-from typing import Any, List
+from configparser import ConfigParser
+from typing import Counter as TypingCounter
+from typing import Any, List, Optional
 
+import neptune
 import torch
 import torch.distributed as dist
 
@@ -82,15 +84,19 @@ class SmoothedValue(object):
 
 
 class MetricLogger(object):
-    def __init__(self, delimiter="\t"):
+    def __init__(self, delimiter="\t", neptune_run: Optional = None, is_train: bool = True):
         self.meters = defaultdict(SmoothedValue)
         self.delimiter = delimiter
+        self.neptune_run = neptune_run
+        self.is_train = is_train
 
     def update(self, **kwargs):
         for k, v in kwargs.items():
             if isinstance(v, torch.Tensor):
                 v = v.item()
             assert isinstance(v, (float, int))
+            if self.is_train:
+                self.log_neptune(k, v)
             self.meters[k].update(v)
 
     def __getattr__(self, attr):
@@ -105,6 +111,15 @@ class MetricLogger(object):
         for name, meter in self.meters.items():
             loss_str.append("{}: {}".format(name, str(meter)))
         return self.delimiter.join(loss_str)
+
+    def log_neptune(self, key, val):
+        """
+        Logs to neptune if neptune_run is given, silently passes otherwise.
+        """
+        prefix = "train/" if self.is_train else "val/"
+        name = prefix + key
+        if self.neptune_run:
+            self.neptune_run[name].append(val)
 
     def synchronize_between_processes(self):
         for meter in self.meters.values():
@@ -264,7 +279,7 @@ def init_distributed_mode(args):
 # copy-paste from
 # https://github.com/facebookresearch/fvcore/blob/166a030e093013a934642ca3744592a2e3de5ea2/fvcore/nn/jit_handles.py#L143-L157
 # change input length assert
-def sfc_flop_jit(inputs: List[Any], outputs: List[Any]) -> typing.Counter[str]:
+def sfc_flop_jit(inputs: List[Any], outputs: List[Any]) -> TypingCounter[str]:
     """
     Count flops for cycle FC.
     """
@@ -274,3 +289,20 @@ def sfc_flop_jit(inputs: List[Any], outputs: List[Any]) -> typing.Counter[str]:
 
     # use a custom name instead of "_convolution"
     return Counter({"conv": conv_flop_count(x_shape, w_shape, out_shape)})
+
+
+def read_cfg(fp: str, encoding: Optional[str] = None, **kwargs) -> ConfigParser:
+    """
+    Reads a config from given filepath.
+    """
+    cfg = ConfigParser(**kwargs)
+    cfg.read(fp, encoding=encoding)
+    return cfg
+
+
+def create_experiment(config_path: str) -> neptune.Run:
+    """
+    Creates a Neptune Experiment
+    """
+    cfg = read_cfg(config_path)["credentials"]
+    return neptune.init_run(project=cfg["project"], api_token=cfg["token"])

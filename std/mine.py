@@ -1,4 +1,7 @@
+from typing import Optional
+
 import torch
+from neptune import Run
 from torch import Tensor, nn
 from torch.nn.modules.loss import _Loss
 from torch.optim import SGD, Optimizer
@@ -8,8 +11,14 @@ class MINEObjective(_Loss):
     def __init__(self, size_average=None, reduce=None, reduction: str = "mean") -> None:
         super(MINEObjective, self).__init__(size_average, reduce, reduction)
 
-    def forward(self, joint: Tensor, marginal: Tensor) -> Tensor:
-        return torch.mean(joint) - torch.log(torch.mean(torch.exp(marginal)))
+    def forward(self, joint: Tensor, marginal: Tensor, cached_avg: float = None, momentum: float = 0.99) -> Tensor:
+        joint_avg = torch.mean(joint)
+        marginal_avg = torch.mean(torch.exp(marginal))
+        mine = joint_avg - torch.log(marginal_avg)
+
+        # EMA & bias correction
+        # cached_avg = (1 - momentum) * marginal_avg + momentum * cached_avg
+        return mine
 
 
 def build_mine(model: nn.Module, dim_spatial: int, dim_channel: int, device: torch.device):
@@ -21,8 +30,8 @@ def build_mine(model: nn.Module, dim_spatial: int, dim_channel: int, device: tor
         nn.Linear(512, 1),
     )
     mine_network.to(device)
-    model_optimizer = SGD(params=model.parameters(), lr=1.0, momentum=0)
-    mine_optimizer = SGD(params=mine_network.parameters(), lr=1.0, momentum=0, maximize=True)
+    model_optimizer = SGD(params=model.parameters(), lr=0.01, momentum=0)
+    mine_optimizer = SGD(params=mine_network.parameters(), lr=0.01, momentum=0, maximize=True)
     objective = MINEObjective()
     return model_optimizer, mine_network, mine_optimizer, objective
 
@@ -34,6 +43,7 @@ def mine_regularization(
     mine_optimizer: Optimizer,
     objective: MINEObjective,
     x: Tensor,
+    neptune_run: Optional[Run] = None
 ):
     """
     MINE algorithm for regularizing the distilled spatial-channel tokens to disentangle from
@@ -58,6 +68,9 @@ def mine_regularization(
     print("Optimizing MINE..")
     model.train()
     mine_network.train()
+    for p in model.parameters():
+        model_device = p.device
+    x = x.to(model_device, non_blocking=True)
     B = x.shape[0]
     _, ts, tc = model.forward_features(x)
 
@@ -77,6 +90,8 @@ def mine_regularization(
     model_optimizer.zero_grad()
     J = objective(joint_outputs, marginal_outputs)
     print(f"MINE Objective: {J:.5f}")
+    if neptune_run:
+        neptune_run["train/mine_objective"].append(J.item())
     J.backward()
     mine_optimizer.step()  # apply gradient ascent
     model_optimizer.step()  # apply gradient descent

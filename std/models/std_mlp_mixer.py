@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Optional
 
 import torch
 from einops.layers.torch import Rearrange, Reduce
@@ -43,7 +44,7 @@ class FFN(nn.Module):
         return x
 
 
-class MixerBlock(nn.Module):
+class STDMixerBlock(nn.Module):
     def __init__(
         self, dim, n_patches, spatial_scale: float = 0.5, channel_scale: float = 4, dropout: float = 0.0
     ):
@@ -67,15 +68,18 @@ class MixerBlock(nn.Module):
         )
         self.channel_dist_norm = nn.LayerNorm(dim + 1)
 
-    def forward(self, z, ts, tc):
+    def forward(
+        self, z: torch.Tensor, ts: Optional[torch.Tensor] = None, tc: Optional[torch.Tensor] = None
+    ):
         u = self.token_mixer(z)
         z = self.channel_mixer(u)
 
-        zts = torch.cat((z, ts), 1)
-        ts = self.spatial_dist(self.spatial_dist_norm(zts)) + ts
+        if ts is not None and tc is not None:
+            zts = torch.cat((z, ts), 1)
+            ts = self.spatial_dist(self.spatial_dist_norm(zts)) + ts
 
-        ztc = torch.cat((z, tc), -1)
-        tc = self.channel_dist(self.channel_dist_norm(ztc)) + tc
+            ztc = torch.cat((z, tc), -1)
+            tc = self.channel_dist(self.channel_dist_norm(ztc)) + tc
 
         return z, ts, tc
 
@@ -92,11 +96,15 @@ class STDMLPMixer(nn.Module):
         f_spatial_expansion: float = 0.5,
         f_channel_expansion: float = 4,
         dropout=0.0,
+        distill_intermediate: bool = False
     ):
         super().__init__()
         h, w = pair(image_size)
         assert (image_size % patch_size) == 0 and (w % h) == 0, "image must be divisible by patch size"
         n_patches = (h // patch_size) * (w // patch_size)
+
+        self.distill_intermediate = distill_intermediate
+        self.depth = depth
 
         self.spatial_dist_token = nn.Parameter(torch.zeros(1, 1, dim))
         self.channel_dist_token = nn.Parameter(torch.zeros(1, n_patches, 1))
@@ -110,7 +118,7 @@ class STDMLPMixer(nn.Module):
         self.per_patch_fc = nn.Linear((patch_size ** 2) * channels, dim)
         self.mixer_blocks = nn.ModuleList(
             [
-                MixerBlock(dim, n_patches, f_spatial_expansion, f_channel_expansion, dropout)
+                STDMixerBlock(dim, n_patches, f_spatial_expansion, f_channel_expansion, dropout)
                 for _ in range(depth)
             ]
         )
@@ -124,8 +132,17 @@ class STDMLPMixer(nn.Module):
         x = self.patchifier(x)
         z = self.per_patch_fc(x)
         ts, tc = self.spatial_dist_token.expand(B, -1, -1), self.channel_dist_token.expand(B, -1, -1)
-        for layer in self.mixer_blocks:
-            z, ts, tc = layer(z, ts, tc)
+        for i, layer in enumerate(self.mixer_blocks):
+            if not self.distill_intermediate:  # distill only last layer
+                if (i + 1) == self.depth:
+                    z, ts, tc = layer(z, ts, tc)
+                else:
+                    z, _, _ = layer(z, None, None)
+            else:
+                if (i + 1) % 3 == 2 or i + 1 == self.depth:  # every 2/3 pos and always last layer
+                    z, ts, tc = layer(z, ts, tc)
+                else:
+                    z, _, _ = layer(z, None, None)
         z = self.ln(z)
         z = self.gap(z)
         return z, ts, tc
@@ -152,7 +169,8 @@ if __name__ == "__main__":
     device = torch.device("cuda")
     image_size = 224
     mixer = STDMLPMixer(
-        image_size=image_size, channels=3, patch_size=16, dim=512, depth=2, num_classes=10
+        image_size=image_size, channels=3, patch_size=16, dim=512, depth=8, num_classes=10,
+            distill_intermediate=True
     ).to(device)
     input_size = (2, 3, image_size, image_size)  # b,c,h,w
     summary(mixer, input_size=input_size, device=device)
@@ -162,10 +180,10 @@ if __name__ == "__main__":
     print(y)
     print(x.shape, y.shape, y_kd.shape)
 
-    dim_spatial = 512
-    dim_channel = 196
-
-    model_optimizer, mine_network, mine_optimizer, objective = build_mine(
-        mixer, dim_spatial, dim_channel, device
-    )
-    mine_regularization(mixer, mine_network, model_optimizer, mine_optimizer, objective, x)
+    # dim_spatial = 512
+    # dim_channel = 196
+    #
+    # model_optimizer, mine_network, mine_optimizer, objective = build_mine(
+    #     mixer, dim_spatial, dim_channel, device
+    # )
+    # mine_regularization(mixer, mine_network, model_optimizer, mine_optimizer, objective, x)

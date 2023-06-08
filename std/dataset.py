@@ -3,12 +3,35 @@
 import json
 import os
 
+import PIL.Image
+import datasets
 from timm.data import create_transform
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from torchvision import datasets, transforms
+from torch.utils.data import Dataset
+from torchvision import datasets as pt_datasets
+from torchvision import transforms
 from torchvision.datasets.folder import ImageFolder, default_loader
 
-from std.data_loader import ClassificationDataset
+
+class HFDataset(Dataset):
+    """Dataset from HuggingFace loader."""
+
+    def __init__(self, data_root, split, pipeline=None):
+        self.data_source = datasets.load_dataset(data_root, split=split)
+        self.pipeline = pipeline
+
+    def __len__(self):
+        return len(self.data_source)
+
+    def __getitem__(self, idx):
+        instance = self.data_source[idx]
+        image: PIL.Image.Image = instance["image"]
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        if self.pipeline is not None:
+            image = self.pipeline(image)
+
+        return image, instance["label"]
 
 
 class INatDataset(ImageFolder):
@@ -66,15 +89,23 @@ def build_dataset(is_train, args):
     transform = build_transform(is_train, args)
 
     if args.data_set == "CIFAR":
-        dataset = datasets.CIFAR100(args.data_path, train=is_train, transform=transform, download=True)
+        dataset = pt_datasets.CIFAR100(
+            args.data_path, train=is_train, transform=transform, download=True
+        )
         nb_classes = 100
     elif args.data_set == "IMNET":
-        if not args.mcloader:
-            root = os.path.join(args.data_path, "train" if is_train else "valid")
-            dataset = datasets.ImageFolder(root, transform=transform)
+        dataset = HFDataset(
+            "imagenet-1k", split="train" if is_train else "validation", pipeline=transform
+        )
+        nb_classes = 1000
+    elif args.data_set == "IMNET-TINY":
+        if is_train:
+            dataset = HFDataset(
+                "Multimodal-Fatima/Imagenet1k_sample_train", split="train", pipeline=transform
+            )
         else:
-            dataset = ClassificationDataset(
-                args.data_path, "train" if is_train else "valid", pipeline=transform
+            dataset = HFDataset(
+                "theodor1289/imagenet-1k_tiny", split="train", pipeline=transform
             )
         nb_classes = 1000
     elif args.data_set == "INAT":
@@ -87,6 +118,8 @@ def build_dataset(is_train, args):
             args.data_path, train=is_train, year=2019, category=args.inat_category, transform=transform
         )
         nb_classes = dataset.nb_classes
+    else:
+        raise ValueError(f"Unknown dataset {args.data_set}!")
 
     return dataset, nb_classes
 
@@ -122,3 +155,27 @@ def build_transform(is_train, args):
     t.append(transforms.ToTensor())
     t.append(transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD))
     return transforms.Compose(t)
+
+
+if __name__ == "__main__":
+    from dataclasses import dataclass
+
+    @dataclass
+    class Args:
+        data_set: str = "IMNET-TINY"
+        data_path: str = "None"
+        batch_size: int = 128
+        num_workers: int = 10
+        pin_mem = False
+        input_size = 224
+        drop: float = 0.0
+        color_jitter = 0.4
+        aa = "rand-m9-mstd0.5-inc1"
+        train_interpolation = "bicubic"
+        reprob: float = 0.25
+        remode: str = "pixel"
+        recount: int = 1
+
+    args = Args()
+    dataset, nb_classes = build_dataset(True, args)
+    print(dataset[0])
