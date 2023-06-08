@@ -95,3 +95,12 @@ def mine_regularization(
     J.backward()
     mine_optimizer.step()  # apply gradient ascent
     model_optimizer.step()  # apply gradient descent
+
+
+if __name__ == "__main__":
+    import torchinfo
+    from std.models.std_mlp_mixer import STDMLPMixer
+
+    model = STDMLPMixer(224, 3, 16, 512, 8, 100)
+    _, mine_model, _, _ = build_mine(model, 176, 512, torch.device("cuda"))
+    torchinfo.summary(mine_model)

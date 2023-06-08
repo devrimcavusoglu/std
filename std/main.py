@@ -9,12 +9,13 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import timm
 import torch
 import torch.backends.cudnn as cudnn
 from neptune import Run
 from timm.data import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
-from timm.models import create_model
+from timm.models import create_model, MlpMixer
 from timm.optim import create_optimizer
 from timm.scheduler import create_scheduler
 from timm.utils import ModelEma, NativeScaler, get_state_dict
@@ -124,16 +125,26 @@ def create_loaders(dataset_train, dataset_val, distributed=True):
 
 def get_model(args):
     if args.model == "mlp-mixer":
-        return STDMLPMixer(
-            image_size=args.input_size,
-            channels=args.channels,
-            patch_size=args.patch_size,
-            dim=args.embedding_dim,
-            depth=args.depth,
-            dropout=args.drop,
-            num_classes=args.nb_classes,
-            distill_intermediate=args.distill_intermediate
-        )
+        if args.distillation_type == "none":
+            MlpMixer(num_classes=args.nb_classes,
+                    img_size=args.input_size,
+                    in_chans=args.channels,
+                    patch_size=args.patch_size,
+                    num_blocks=args.depth,
+                    embed_dim=args.embedding_dim,
+                    drop_rate=args.drop
+                     )
+        else:
+            return STDMLPMixer(
+                image_size=args.input_size,
+                channels=args.channels,
+                patch_size=args.patch_size,
+                dim=args.embedding_dim,
+                depth=args.depth,
+                dropout=args.drop,
+                num_classes=args.nb_classes,
+                distill_intermediate=args.distill_intermediate
+            )
     else:
         print("Only MLP-Mixer is available currently, others will come soon!")
 
@@ -430,9 +441,10 @@ def main(args):
 
     # wrap the criterion in our custom DistillationLoss, which
     # just dispatches to the original criterion if args.distillation_type is 'none'
-    criterion = DistillationLoss(
-        criterion, teacher_model, args.distillation_type, args.distillation_alpha, args.distillation_tau
-    )
+    if args.distillation_type != "none":
+        criterion = DistillationLoss(
+            criterion, teacher_model, args.distillation_type, args.distillation_alpha, args.distillation_tau
+        )
 
     output_dir = Path(args.output_dir)
     if args.resume:

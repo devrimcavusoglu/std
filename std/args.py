@@ -240,11 +240,11 @@ def get_args_parser():
         default="resnet50",
         type=str,
         metavar="MODEL",
-        help='Name of teacher model to train (default: "resnet50"',
+        help='Name of teacher model to train (default: "resnet50")',
     )
     parser.add_argument("--teacher-path", type=str, default="")
     parser.add_argument(
-        "--distillation-type", default="hard", choices=["none", "soft", "hard"], type=str, help=""
+        "--distillation-type", default="hard", choices=["none", "soft", "hard"], type=str, help="Type of distillation"
     )
     parser.add_argument("--distillation-alpha", default=0.5, type=float, help="")
     parser.add_argument("--distillation-tau", default=1.0, type=float, help="")
