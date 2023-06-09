@@ -26,13 +26,14 @@ def train_one_epoch(
     device: torch.device,
     epoch: int,
     loss_scaler,
+    distillation_type: str,
     max_norm: float = 0,
     model_ema: Optional[ModelEma] = None,
     mixup_fn: Optional[Mixup] = None,
     set_training_mode=True,
     amp_autocast=None,
     n_mine_samples: int = None,
-    neptune_run: Optional[Run] = None
+    neptune_run: Optional[Run] = None,
 ):
     model.train(set_training_mode)
     metric_logger = utils.MetricLogger(delimiter="  ", neptune_run=neptune_run)
@@ -47,6 +48,8 @@ def train_one_epoch(
             "changing the number to be set as default (batch-size)"
         )
         n_mine_samples = None
+    if distillation_type == "none":
+        n_mine_samples = 0
 
     n_mine_samples = data_loader.batch_size if n_mine_samples is None else n_mine_samples
     mine_samples = []
@@ -65,7 +68,10 @@ def train_one_epoch(
 
         with amp_autocast():
             outputs = model(samples)
-            loss = criterion(samples, outputs, targets)
+            if distillation_type == "none":
+                loss = criterion(outputs, targets)
+            else:
+                loss = criterion(samples, outputs, targets)
 
         loss_value = loss.item()
 
@@ -100,10 +106,12 @@ def train_one_epoch(
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
+    stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
     if len(mine_samples) > 0:
         mine_samples = torch.cat(mine_samples, 0)
-    stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-    return stats, mine_samples
+        return stats, mine_samples
+    else:
+        return stats, None
 
 
 @torch.no_grad()

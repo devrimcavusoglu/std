@@ -44,7 +44,7 @@ class FFN(nn.Module):
         return x
 
 
-class STDMixerBlock(nn.Module):
+class MixerBlock(nn.Module):
     def __init__(
         self, dim, n_patches, spatial_scale: float = 0.5, channel_scale: float = 4, dropout: float = 0.0
     ):
@@ -58,33 +58,16 @@ class STDMixerBlock(nn.Module):
             dim, FFN(dim, channel_hidden, dropout, mixing_type="channel")
         )
 
-        self.spatial_dist = FFN(
-            n_patches + 1, token_hidden, dropout, mixing_type="token", distillation=True
-        )
-        self.spatial_dist_norm = nn.LayerNorm(dim)
-
-        self.channel_dist = FFN(
-            dim + 1, channel_hidden, dropout, mixing_type="channel", distillation=True
-        )
-        self.channel_dist_norm = nn.LayerNorm(dim + 1)
-
     def forward(
-        self, z: torch.Tensor, ts: Optional[torch.Tensor] = None, tc: Optional[torch.Tensor] = None
+        self, z: torch.Tensor
     ):
         u = self.token_mixer(z)
         z = self.channel_mixer(u)
 
-        if ts is not None and tc is not None:
-            zts = torch.cat((z, ts), 1)
-            ts = self.spatial_dist(self.spatial_dist_norm(zts)) + ts
-
-            ztc = torch.cat((z, tc), -1)
-            tc = self.channel_dist(self.channel_dist_norm(ztc)) + tc
-
-        return z, ts, tc
+        return z
 
 
-class STDMLPMixer(nn.Module):
+class MLPMixer(nn.Module):
     def __init__(
         self,
         image_size,
@@ -96,21 +79,13 @@ class STDMLPMixer(nn.Module):
         f_spatial_expansion: float = 0.5,
         f_channel_expansion: float = 4,
         dropout=0.0,
-        distill_intermediate: bool = False
     ):
         super().__init__()
         h, w = pair(image_size)
         assert (image_size % patch_size) == 0 and (w % h) == 0, "image must be divisible by patch size"
         n_patches = (h // patch_size) * (w // patch_size)
 
-        self.distill_intermediate = distill_intermediate
         self.depth = depth
-
-        self.spatial_dist_token = nn.Parameter(torch.zeros(1, 1, dim))
-        self.channel_dist_token = nn.Parameter(torch.zeros(1, n_patches, 1))
-
-        trunc_normal_(self.spatial_dist_token, std=0.2)
-        trunc_normal_(self.channel_dist_token, std=0.2)
 
         self.patchifier = Rearrange(
             "b c (h p1) (w p2) -> b (h w) (p1 p2 c)", p1=patch_size, p2=patch_size
@@ -118,44 +93,29 @@ class STDMLPMixer(nn.Module):
         self.per_patch_fc = nn.Linear((patch_size ** 2) * channels, dim)
         self.mixer_blocks = nn.ModuleList(
             [
-                STDMixerBlock(dim, n_patches, f_spatial_expansion, f_channel_expansion, dropout)
+                MixerBlock(dim, n_patches, f_spatial_expansion, f_channel_expansion, dropout)
                 for _ in range(depth)
             ]
         )
         self.ln = nn.LayerNorm(dim)
         self.gap = Reduce("b n c -> b c", "mean")
         self.classifier = nn.Linear(dim, num_classes)
-        self.classifier_dist = nn.Linear(dim + n_patches, num_classes)
 
     def forward_features(self, x):
         B = x.shape[0]  # n_batch
         x = self.patchifier(x)
         z = self.per_patch_fc(x)
-        ts, tc = self.spatial_dist_token.expand(B, -1, -1), self.channel_dist_token.expand(B, -1, -1)
         for i, layer in enumerate(self.mixer_blocks):
-            if not self.distill_intermediate:  # distill only last layer
-                if (i + 1) == self.depth:
-                    z, ts, tc = layer(z, ts, tc)
-                else:
-                    z, _, _ = layer(z, None, None)
-            else:
-                if (i + 1) % 3 == 2 or i + 1 == self.depth:  # every 2/3 pos and always last layer
-                    z, ts, tc = layer(z, ts, tc)
-                else:
-                    z, _, _ = layer(z, None, None)
+            z = layer(z)
         z = self.ln(z)
         z = self.gap(z)
-        return z, ts, tc
+        return z
 
     def forward(self, x):
         B = x.shape[0]  # n_batch
-        z, ts, tc = self.forward_features(x)
+        z = self.forward_features(x)
         outputs = self.classifier(z)
-        t_dist = torch.cat((ts.view(B, -1), tc.view(B, -1)), dim=-1)
-        outputs_dist = self.classifier_dist(t_dist)
-        if self.training:
-            return outputs, outputs_dist
-        return (outputs + outputs_dist) / 2
+        return outputs
 
 
 if __name__ == "__main__":
@@ -169,26 +129,9 @@ if __name__ == "__main__":
 
     device = torch.device("cuda")
     image_size = 32
-    mixer = MlpMixer(num_classes=100,
-                    img_size=image_size,
-                    in_chans=3,
-                    patch_size=4,
-                    num_blocks=8,
-                    embed_dim=512,
-                    drop_rate=0
-                     ).to(device)
-    mixer = MlpMixer(num_classes=100,
-                     img_size=image_size,
-                     in_chans=3,
-                     patch_size=4,
-                     num_blocks=8,
-                     embed_dim=512,
-                     drop_rate=0
-                     ).to(device)
-    # mixer = STDMLPMixer(
-    #     image_size=image_size, channels=3, patch_size=16, dim=512, depth=8, num_classes=10,
-    #         distill_intermediate=True
-    # ).to(device)
+    mixer = MLPMixer(
+        image_size=image_size, channels=3, patch_size=4, dim=512, depth=8, num_classes=100
+    ).to(device)
     input_size = (2, 3, image_size, image_size)  # b,c,h,w
     summary(mixer, input_size=input_size, device=device)
     torch.manual_seed(3)
