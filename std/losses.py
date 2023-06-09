@@ -3,6 +3,8 @@
 """
 Implements the knowledge distillation loss
 """
+from typing import List
+
 import torch
 from torch.nn import functional as F
 
@@ -16,14 +18,14 @@ class DistillationLoss(torch.nn.Module):
     def __init__(
         self,
         base_criterion: torch.nn.Module,
-        teacher_model: torch.nn.Module,
+        teacher_models: List[torch.nn.Module],
         distillation_type: str,
         alpha: float,
         tau: float,
     ):
         super().__init__()
         self.base_criterion = base_criterion
-        self.teacher_model = teacher_model
+        self.teacher_models = teacher_models
         assert distillation_type in ["none", "soft", "hard"]
         self.distillation_type = distillation_type
         self.alpha = alpha
@@ -53,8 +55,10 @@ class DistillationLoss(torch.nn.Module):
                 "class_token and the dist_token"
             )
         # don't backprop throught the teacher
+        teacher_outputs = []
         with torch.no_grad():
-            teacher_outputs = self.teacher_model(inputs)
+            for teacher in self.teacher_models:
+                teacher_outputs.append(teacher(inputs))
 
         if self.distillation_type == "soft":
             T = self.tau

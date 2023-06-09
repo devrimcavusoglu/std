@@ -95,7 +95,9 @@ class STDMLPMixer(nn.Module):
         num_classes,
         f_spatial_expansion: float = 0.5,
         f_channel_expansion: float = 4,
-        dropout=0.0,
+        dropout: float = 0.0,
+        n_teachers: int = 1,
+        split_teachers: bool = False,
         distill_intermediate: bool = False
     ):
         super().__init__()
@@ -103,14 +105,11 @@ class STDMLPMixer(nn.Module):
         assert (image_size % patch_size) == 0 and (w % h) == 0, "image must be divisible by patch size"
         n_patches = (h // patch_size) * (w // patch_size)
 
-        self.distill_intermediate = distill_intermediate
+        self.dim = dim
+        self.n_patches = n_patches
         self.depth = depth
-
-        self.spatial_dist_token = nn.Parameter(torch.zeros(1, 1, dim))
-        self.channel_dist_token = nn.Parameter(torch.zeros(1, n_patches, 1))
-
-        trunc_normal_(self.spatial_dist_token, std=0.2)
-        trunc_normal_(self.channel_dist_token, std=0.2)
+        self.n_teachers = n_teachers
+        self.distill_intermediate = distill_intermediate
 
         self.patchifier = Rearrange(
             "b c (h p1) (w p2) -> b (h w) (p1 p2 c)", p1=patch_size, p2=patch_size
@@ -126,6 +125,17 @@ class STDMLPMixer(nn.Module):
         self.gap = Reduce("b n c -> b c", "mean")
         self.classifier = nn.Linear(dim, num_classes)
         self.classifier_dist = nn.Linear(dim + n_patches, num_classes)
+
+    def init_distillation_tokens(self):
+        if self.split_teachers:
+            self.spatial_dist_token = nn.Parameter(torch.zeros(1, 1, self.dim))
+            self.channel_dist_token = nn.Parameter(torch.zeros(1, self.n_patches, 1))
+        else:
+            self.spatial_dist_token = nn.Parameter(torch.zeros(self.n_teachers, 1, self.dim))
+            self.channel_dist_token = nn.Parameter(torch.zeros(self.n_teachers, self.n_patches, 1))
+
+        trunc_normal_(self.spatial_dist_token, std=0.2)
+        trunc_normal_(self.channel_dist_token, std=0.2)
 
     def forward_features(self, x):
         B = x.shape[0]  # n_batch
@@ -161,9 +171,6 @@ class STDMLPMixer(nn.Module):
 if __name__ == "__main__":
     import torch
     from torchinfo import summary
-    from timm.models.mlp_mixer import MlpMixer
-
-    from std.mine import build_mine, mine_regularization
 
     torch.manual_seed(3)
 
@@ -176,14 +183,6 @@ if __name__ == "__main__":
                     num_blocks=8,
                     embed_dim=512,
                     drop_rate=0
-                     ).to(device)
-    mixer = MlpMixer(num_classes=100,
-                     img_size=image_size,
-                     in_chans=3,
-                     patch_size=4,
-                     num_blocks=8,
-                     embed_dim=512,
-                     drop_rate=0
                      ).to(device)
     # mixer = STDMLPMixer(
     #     image_size=image_size, channels=3, patch_size=16, dim=512, depth=8, num_classes=10,

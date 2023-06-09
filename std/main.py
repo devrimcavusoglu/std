@@ -5,6 +5,7 @@ import datetime
 import json
 import time
 import uuid
+from collections import OrderedDict
 from contextlib import suppress
 from pathlib import Path
 from typing import Optional
@@ -426,29 +427,34 @@ def main(args):
 
     criterion = create_criterion(args)
 
-    teacher_model = None
+    teacher_models = None
     if args.distillation_type != "none":
         # assert args.teacher_path, 'need to specify teacher-path when using distillation'
         print(f"Creating teacher model: {args.teacher_model}")
+        teacher_models = []
         if args.data_set == "CIFAR":
-            teacher_model = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_resnet56", pretrained=True)
+            for teacher in args.teacher_model:
+                teacher_model = torch.hub.load("chenyaofo/pytorch-cifar-models", f"cifar100_{teacher}", pretrained=True)
+                teacher_models.append(teacher_model)
         elif args.data_set == "INAT":
             pass
         else:  # IMNET
-            teacher_model = create_model(
-                args.teacher_model,
-                pretrained=True,
-                # num_classes=args.nb_classes,
-                # global_pool="avg",
-            )
-        teacher_model.to(device)
-        teacher_model.eval()
+            for teacher in args.teacher_model:
+                teacher_model = create_model(
+                        teacher,
+                        pretrained=True,
+                )
+                teacher_models.append(teacher_model)
+
+        for teacher_model in teacher_models:
+            teacher_model.to(device)
+            teacher_model.eval()
 
     # wrap the criterion in our custom DistillationLoss, which
     # just dispatches to the original criterion if args.distillation_type is 'none'
     if args.distillation_type != "none":
         criterion = DistillationLoss(
-            criterion, teacher_model, args.distillation_type, args.distillation_alpha, args.distillation_tau
+            criterion, teacher_models, args.distillation_type, args.distillation_alpha, args.distillation_tau
         )
 
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

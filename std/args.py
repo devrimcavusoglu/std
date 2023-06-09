@@ -239,6 +239,7 @@ def get_args_parser():
         "--teacher-model",
         default="resnet50",
         type=str,
+        nargs="+",
         metavar="MODEL",
         help='Name of teacher model to train (default: "resnet50")',
     )
