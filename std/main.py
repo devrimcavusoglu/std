@@ -4,23 +4,19 @@ import argparse
 import datetime
 import json
 import time
-import uuid
-from collections import OrderedDict
 from contextlib import suppress
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
-import timm
 import torch
 import torch.backends.cudnn as cudnn
-from neptune import Run
 from timm.data import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.models import create_model
 from timm.optim import create_optimizer
 from timm.scheduler import create_scheduler
-from timm.utils import ModelEma, NativeScaler, get_state_dict
+from timm.utils import ModelEma, NativeScaler
 
 import std.utils as utils
 from std import NEPTUNE_CONFIG_PATH
