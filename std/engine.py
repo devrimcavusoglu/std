@@ -8,9 +8,9 @@ import sys
 import warnings
 from typing import Iterable, Optional
 
+import numpy as np
 import torch
 from neptune import Run
-import numpy as np
 from timm.data import Mixup
 from timm.utils import ModelEma, accuracy
 

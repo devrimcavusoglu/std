@@ -3,8 +3,8 @@
 import json
 import os
 
-import PIL.Image
 import datasets
+import PIL.Image
 from timm.data import create_transform
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from torch.utils.data import Dataset
@@ -104,9 +104,7 @@ def build_dataset(is_train, args):
                 "Multimodal-Fatima/Imagenet1k_sample_train", split="train", pipeline=transform
             )
         else:
-            dataset = HFDataset(
-                "theodor1289/imagenet-1k_tiny", split="train", pipeline=transform
-            )
+            dataset = HFDataset("theodor1289/imagenet-1k_tiny", split="train", pipeline=transform)
         nb_classes = 1000
     elif args.data_set == "INAT":
         dataset = INatDataset(
@@ -155,27 +153,3 @@ def build_transform(is_train, args):
     t.append(transforms.ToTensor())
     t.append(transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD))
     return transforms.Compose(t)
-
-
-if __name__ == "__main__":
-    from dataclasses import dataclass
-
-    @dataclass
-    class Args:
-        data_set: str = "IMNET-TINY"
-        data_path: str = "None"
-        batch_size: int = 128
-        num_workers: int = 10
-        pin_mem = False
-        input_size = 224
-        drop: float = 0.0
-        color_jitter = 0.4
-        aa = "rand-m9-mstd0.5-inc1"
-        train_interpolation = "bicubic"
-        reprob: float = 0.25
-        remode: str = "pixel"
-        recount: int = 1
-
-    args = Args()
-    dataset, nb_classes = build_dataset(True, args)
-    print(dataset[0])

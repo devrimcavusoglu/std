@@ -11,7 +11,9 @@ class MINEObjective(_Loss):
     def __init__(self, size_average=None, reduce=None, reduction: str = "mean") -> None:
         super(MINEObjective, self).__init__(size_average, reduce, reduction)
 
-    def forward(self, joint: Tensor, marginal: Tensor, cached_avg: float = None, momentum: float = 0.99) -> Tensor:
+    def forward(
+        self, joint: Tensor, marginal: Tensor, cached_avg: float = None, momentum: float = 0.99
+    ) -> Tensor:
         joint_avg = torch.mean(joint)
         marginal_avg = torch.mean(torch.exp(marginal))
         mine = joint_avg - torch.log(marginal_avg)
@@ -43,7 +45,7 @@ def mine_regularization(
     mine_optimizer: Optimizer,
     objective: MINEObjective,
     x: Tensor,
-    neptune_run: Optional[Run] = None
+    neptune_run: Optional[Run] = None,
 ):
     """
     MINE algorithm for regularizing the distilled spatial-channel tokens to disentangle from
@@ -96,12 +98,3 @@ def mine_regularization(
     J.backward()
     mine_optimizer.step()  # apply gradient ascent
     model_optimizer.step()  # apply gradient descent
-
-
-if __name__ == "__main__":
-    import torchinfo
-    from std.models.std_mlp_mixer import STDMLPMixer
-
-    model = STDMLPMixer(224, 3, 16, 512, 8, 100)
-    _, mine_model, _, _ = build_mine(model, 176, 512, torch.device("cuda"))
-    torchinfo.summary(mine_model)

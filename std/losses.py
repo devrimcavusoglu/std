@@ -15,7 +15,7 @@ def confidence_reweighting(teacher_outputs, presoftmax: bool = True):
     teacher_outputs = torch.stack(teacher_outputs)
     if presoftmax:
         teacher_outputs = torch.softmax(teacher_outputs, -1)
-    negative_entropy = - torch.sum(teacher_outputs * torch.log(teacher_outputs), dim=(1, 2))
+    negative_entropy = -torch.sum(teacher_outputs * torch.log(teacher_outputs), dim=(1, 2))
     return torch.softmax(negative_entropy, -1)
 
 
@@ -95,7 +95,9 @@ class DistillationLoss(torch.nn.Module):
         else:  # hard distillation
             distillation_loss = 0.0
             for i, output_kd in enumerate(outputs_kd):
-                distillation_loss += teachers_weights[i] * F.cross_entropy(output_kd, teacher_outputs[i].argmax(dim=1))
+                distillation_loss += teachers_weights[i] * F.cross_entropy(
+                    output_kd, teacher_outputs[i].argmax(dim=1)
+                )
 
         loss = base_loss * (1 - self.alpha) + distillation_loss * self.alpha
         return loss

@@ -58,9 +58,7 @@ class MixerBlock(nn.Module):
             dim, FFN(dim, channel_hidden, dropout, mixing_type="channel")
         )
 
-    def forward(
-        self, z: torch.Tensor
-    ):
+    def forward(self, z: torch.Tensor):
         u = self.token_mixer(z)
         z = self.channel_mixer(u)
 
@@ -120,8 +118,8 @@ class MLPMixer(nn.Module):
 
 if __name__ == "__main__":
     import torch
-    from torchinfo import summary
     from timm.models.mlp_mixer import MlpMixer
+    from torchinfo import summary
 
     from std.mine import build_mine, mine_regularization
 
