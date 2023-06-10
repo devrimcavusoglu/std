@@ -147,7 +147,8 @@ def get_model(args):
                 depth=args.depth,
                 dropout=args.drop,
                 num_classes=args.nb_classes,
-                distill_intermediate=args.distill_intermediate
+                distill_intermediate=args.distill_intermediate,
+                n_teachers=len(args.teacher_model)
             )
     else:
         print("Only MLP-Mixer is available currently, others will come soon!")
@@ -454,7 +455,8 @@ def main(args):
     # just dispatches to the original criterion if args.distillation_type is 'none'
     if args.distillation_type != "none":
         criterion = DistillationLoss(
-            criterion, teacher_models, args.distillation_type, args.distillation_alpha, args.distillation_tau
+            criterion, teacher_models, args.distillation_type, args.distillation_alpha, args.distillation_tau,
+                run=neptune_run
         )
 
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

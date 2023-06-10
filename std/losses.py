@@ -3,10 +3,20 @@
 """
 Implements the knowledge distillation loss
 """
-from typing import List
+from typing import List, Optional
 
 import torch
+from neptune import Run
 from torch.nn import functional as F
+
+
+def confidence_reweighting(teacher_outputs, presoftmax: bool = True):
+    # Compute negative entropy
+    teacher_outputs = torch.stack(teacher_outputs)
+    if presoftmax:
+        teacher_outputs = torch.softmax(teacher_outputs, -1)
+    negative_entropy = - torch.sum(teacher_outputs * torch.log(teacher_outputs), dim=(1, 2))
+    return torch.softmax(negative_entropy, -1)
 
 
 class DistillationLoss(torch.nn.Module):
@@ -22,6 +32,7 @@ class DistillationLoss(torch.nn.Module):
         distillation_type: str,
         alpha: float,
         tau: float,
+        run: Optional[Run] = None,
     ):
         super().__init__()
         self.base_criterion = base_criterion
@@ -30,6 +41,7 @@ class DistillationLoss(torch.nn.Module):
         self.distillation_type = distillation_type
         self.alpha = alpha
         self.tau = tau
+        self.run = run
 
     def forward(self, inputs, outputs, labels):
         """
@@ -60,22 +72,30 @@ class DistillationLoss(torch.nn.Module):
             for teacher in self.teacher_models:
                 teacher_outputs.append(teacher(inputs))
 
+        teachers_weights = confidence_reweighting(teacher_outputs)
+        if self.run is not None:
+            for i, w in enumerate(teachers_weights):
+                self.run[f"train/weight_teacher_{i}"].append(w.item())
         if self.distillation_type == "soft":
+            distillation_loss = 0.0
             T = self.tau
             # taken from https://github.com/peterliht/knowledge-distillation-pytorch/blob/master/model/net.py#L100
             # with slight modifications
-            distillation_loss = (
-                F.kl_div(
-                    F.log_softmax(outputs_kd / T, dim=1),
-                    F.log_softmax(teacher_outputs / T, dim=1),
-                    reduction="sum",
-                    log_target=True,
+            for i, output_kd in enumerate(outputs_kd):
+                distillation_loss += teachers_weights[i] * (
+                    F.kl_div(
+                        F.log_softmax(outputs_kd / T, dim=1),
+                        F.log_softmax(teacher_outputs[i] / T, dim=1),
+                        reduction="sum",
+                        log_target=True,
+                    )
+                    * (T * T)
+                    / outputs_kd.numel()
                 )
-                * (T * T)
-                / outputs_kd.numel()
-            )
         else:  # hard distillation
-            distillation_loss = F.cross_entropy(outputs_kd, teacher_outputs.argmax(dim=1))
+            distillation_loss = 0.0
+            for i, output_kd in enumerate(outputs_kd):
+                distillation_loss += teachers_weights[i] * F.cross_entropy(output_kd, teacher_outputs[i].argmax(dim=1))
 
         loss = base_loss * (1 - self.alpha) + distillation_loss * self.alpha
         return loss

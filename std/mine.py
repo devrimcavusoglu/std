@@ -78,7 +78,8 @@ def mine_regularization(
     idx = torch.arange(B) + 1  # shift index to right
     idx[-1] = 0  # last-pos correction
 
-    ts, tc = ts.view(B, -1), tc.view(B, -1)  # shape (N,L)
+    # Avg. across teacher dist heads
+    ts, tc = ts.mean(dim=1), tc.mean(dim=2)  # Shape (N,L)
     joint = torch.hstack((ts, tc))  # paired tokens
     marginal = torch.hstack((ts, tc[idx]))  # unpaired tokens (j = i + 1)
 

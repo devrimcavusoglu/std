@@ -1,3 +1,4 @@
+import warnings
 from functools import partial
 from typing import Optional
 
@@ -46,7 +47,7 @@ class FFN(nn.Module):
 
 class STDMixerBlock(nn.Module):
     def __init__(
-        self, dim, n_patches, spatial_scale: float = 0.5, channel_scale: float = 4, dropout: float = 0.0
+        self, dim, n_patches, n_teachers, spatial_scale: float = 0.5, channel_scale: float = 4, dropout: float = 0.0
     ):
         super().__init__()
         token_hidden = int(dim * spatial_scale)
@@ -59,14 +60,14 @@ class STDMixerBlock(nn.Module):
         )
 
         self.spatial_dist = FFN(
-            n_patches + 1, token_hidden, dropout, mixing_type="token", distillation=True
+            n_patches + n_teachers, token_hidden, dropout, mixing_type="token", distillation=True
         )
         self.spatial_dist_norm = nn.LayerNorm(dim)
 
         self.channel_dist = FFN(
-            dim + 1, channel_hidden, dropout, mixing_type="channel", distillation=True
+            dim + n_teachers, channel_hidden, dropout, mixing_type="channel", distillation=True
         )
-        self.channel_dist_norm = nn.LayerNorm(dim + 1)
+        self.channel_dist_norm = nn.LayerNorm(dim + n_teachers)
 
     def forward(
         self, z: torch.Tensor, ts: Optional[torch.Tensor] = None, tc: Optional[torch.Tensor] = None
@@ -105,11 +106,15 @@ class STDMLPMixer(nn.Module):
         assert (image_size % patch_size) == 0 and (w % h) == 0, "image must be divisible by patch size"
         n_patches = (h // patch_size) * (w // patch_size)
 
+        if n_teachers < 1:
+            raise ValueError("`n_teachers` must be greater than or equal to 1.")
+
         self.dim = dim
         self.n_patches = n_patches
         self.depth = depth
         self.n_teachers = n_teachers
         self.distill_intermediate = distill_intermediate
+        self.init_distillation_tokens()
 
         self.patchifier = Rearrange(
             "b c (h p1) (w p2) -> b (h w) (p1 p2 c)", p1=patch_size, p2=patch_size
@@ -117,22 +122,21 @@ class STDMLPMixer(nn.Module):
         self.per_patch_fc = nn.Linear((patch_size ** 2) * channels, dim)
         self.mixer_blocks = nn.ModuleList(
             [
-                STDMixerBlock(dim, n_patches, f_spatial_expansion, f_channel_expansion, dropout)
+                STDMixerBlock(dim, n_patches, n_teachers, f_spatial_expansion, f_channel_expansion, dropout)
                 for _ in range(depth)
             ]
         )
         self.ln = nn.LayerNorm(dim)
         self.gap = Reduce("b n c -> b c", "mean")
         self.classifier = nn.Linear(dim, num_classes)
-        self.classifier_dist = nn.Linear(dim + n_patches, num_classes)
+        # different distillation heads to different teachers
+        self.classifier_dist = nn.ModuleList([
+            nn.Linear(dim + n_patches, num_classes) for _ in range(n_teachers)
+        ])
 
     def init_distillation_tokens(self):
-        if self.split_teachers:
-            self.spatial_dist_token = nn.Parameter(torch.zeros(1, 1, self.dim))
-            self.channel_dist_token = nn.Parameter(torch.zeros(1, self.n_patches, 1))
-        else:
-            self.spatial_dist_token = nn.Parameter(torch.zeros(self.n_teachers, 1, self.dim))
-            self.channel_dist_token = nn.Parameter(torch.zeros(self.n_teachers, self.n_patches, 1))
+        self.spatial_dist_token = nn.Parameter(torch.zeros(self.n_teachers, self.dim))
+        self.channel_dist_token = nn.Parameter(torch.zeros(self.n_patches, self.n_teachers))
 
         trunc_normal_(self.spatial_dist_token, std=0.2)
         trunc_normal_(self.channel_dist_token, std=0.2)
@@ -149,7 +153,7 @@ class STDMLPMixer(nn.Module):
                 else:
                     z, _, _ = layer(z, None, None)
             else:
-                if (i + 1) % 3 == 2 or i + 1 == self.depth:  # every 2/3 pos and always last layer
+                if (i + 1) % 3 == 2 or (i + 1) == self.depth:  # every 2/3 pos and always last layer
                     z, ts, tc = layer(z, ts, tc)
                 else:
                     z, _, _ = layer(z, None, None)
@@ -161,11 +165,17 @@ class STDMLPMixer(nn.Module):
         B = x.shape[0]  # n_batch
         z, ts, tc = self.forward_features(x)
         outputs = self.classifier(z)
-        t_dist = torch.cat((ts.view(B, -1), tc.view(B, -1)), dim=-1)
-        outputs_dist = self.classifier_dist(t_dist)
+        # Concat into (Batch, Teacher's Tokens, Features)
+        t_dist = torch.cat((ts, tc.permute(0, 2, 1)), dim=-1)
+        outputs_dists = []
+        for teacher, clf in enumerate(self.classifier_dist):
+            outputs_dists.append(clf(t_dist[:, teacher, :]))
         if self.training:
-            return outputs, outputs_dist
-        return (outputs + outputs_dist) / 2
+            return outputs, outputs_dists
+
+        # Section 3.3 average of avg of dist heads and clf head
+        dist_heads_avg = torch.mean(torch.stack(outputs_dists), dim=0)  # dim=teacher
+        return (outputs + dist_heads_avg) / 2
 
 
 if __name__ == "__main__":
@@ -176,14 +186,6 @@ if __name__ == "__main__":
 
     device = torch.device("cuda")
     image_size = 32
-    mixer = MlpMixer(num_classes=100,
-                    img_size=image_size,
-                    in_chans=3,
-                    patch_size=4,
-                    num_blocks=8,
-                    embed_dim=512,
-                    drop_rate=0
-                     ).to(device)
     # mixer = STDMLPMixer(
     #     image_size=image_size, channels=3, patch_size=16, dim=512, depth=8, num_classes=10,
     #         distill_intermediate=True
