@@ -239,18 +239,27 @@ def get_args_parser():
         "--teacher-model",
         default="resnet50",
         type=str,
+        nargs="+",
         metavar="MODEL",
-        help='Name of teacher model to train (default: "resnet50"',
+        help='Name of teacher model to train (default: "resnet50")',
     )
     parser.add_argument("--teacher-path", type=str, default="")
     parser.add_argument(
-        "--distillation-type", default="hard", choices=["none", "soft", "hard"], type=str, help=""
+        "--distillation-type",
+        default="hard",
+        choices=["none", "soft", "hard"],
+        type=str,
+        help="Type of distillation",
     )
     parser.add_argument("--distillation-alpha", default=0.5, type=float, help="")
     parser.add_argument("--distillation-tau", default=1.0, type=float, help="")
-    parser.add_argument("--distill-intermediate", action="store_true", default=False,
-                        help="By default only last layer distillation is applied."
-                             "Set this parameter to distill also intermediate layers.")
+    parser.add_argument(
+        "--distill-intermediate",
+        action="store_true",
+        default=False,
+        help="By default only last layer distillation is applied."
+        "Set this parameter to distill also intermediate layers.",
+    )
 
     # * Finetuning params
     parser.add_argument("--finetune", default="", help="finetune from checkpoint")
@@ -262,7 +271,7 @@ def get_args_parser():
     parser.add_argument(
         "--data-set",
         default="IMNET",
-        choices=["CIFAR", "IMNET", "IMNET-TINY" ,"INAT", "INAT19"],
+        choices=["CIFAR", "IMNET", "IMNET-TINY", "INAT", "INAT19"],
         type=str,
         help="Image Net dataset path",
     )
@@ -301,5 +310,7 @@ def get_args_parser():
     parser.add_argument("--flops", action="store_true", help="whether calculate FLOPs of the model")
     parser.add_argument("--no_amp", action="store_true", help="not using amp")
 
-    parser.add_argument("--log-neptune", action="store_true", default=False, help="whether to log metrics to neptune")
+    parser.add_argument(
+        "--log-neptune", action="store_true", default=False, help="whether to log metrics to neptune"
+    )
     return parser

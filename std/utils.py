@@ -11,8 +11,9 @@ import os
 import time
 from collections import Counter, defaultdict, deque
 from configparser import ConfigParser
+from typing import Any
 from typing import Counter as TypingCounter
-from typing import Any, List, Optional
+from typing import List, Optional
 
 import neptune
 import torch

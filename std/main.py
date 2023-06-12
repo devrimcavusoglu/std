@@ -11,13 +11,12 @@ from typing import Optional
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
-from neptune import Run
 from timm.data import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.models import create_model
 from timm.optim import create_optimizer
 from timm.scheduler import create_scheduler
-from timm.utils import ModelEma, NativeScaler, get_state_dict
+from timm.utils import ModelEma, NativeScaler
 
 import std.utils as utils
 from std import NEPTUNE_CONFIG_PATH
@@ -26,6 +25,7 @@ from std.dataset import build_dataset
 from std.engine import evaluate, train_one_epoch
 from std.losses import DistillationLoss
 from std.mine import build_mine, mine_regularization
+from std.models.mlp_mixer import MLPMixer
 from std.models.std_mlp_mixer import STDMLPMixer
 from std.samplers import RASampler
 
@@ -124,16 +124,28 @@ def create_loaders(dataset_train, dataset_val, distributed=True):
 
 def get_model(args):
     if args.model == "mlp-mixer":
-        return STDMLPMixer(
-            image_size=args.input_size,
-            channels=args.channels,
-            patch_size=args.patch_size,
-            dim=args.embedding_dim,
-            depth=args.depth,
-            dropout=args.drop,
-            num_classes=args.nb_classes,
-            distill_intermediate=args.distill_intermediate
-        )
+        if args.distillation_type == "none":
+            return MLPMixer(
+                image_size=args.input_size,
+                channels=args.channels,
+                patch_size=args.patch_size,
+                dim=args.embedding_dim,
+                depth=args.depth,
+                dropout=args.drop,
+                num_classes=args.nb_classes,
+            )
+        else:
+            return STDMLPMixer(
+                image_size=args.input_size,
+                channels=args.channels,
+                patch_size=args.patch_size,
+                dim=args.embedding_dim,
+                depth=args.depth,
+                dropout=args.drop,
+                num_classes=args.nb_classes,
+                distill_intermediate=args.distill_intermediate,
+                n_teachers=len(args.teacher_model),
+            )
     else:
         print("Only MLP-Mixer is available currently, others will come soon!")
 
@@ -161,9 +173,10 @@ def train(
     # build MINE stuff
     dim_spatial = args.embedding_dim
     dim_channel = (args.input_size // args.patch_size) ** 2
-    model_regulizer, mine_network, mine_optimizer, objective = build_mine(
-        model, dim_spatial, dim_channel, device
-    )
+    if args.distillation_type != "none":
+        model_regulizer, mine_network, mine_optimizer, objective = build_mine(
+            model, dim_spatial, dim_channel, device
+        )
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
@@ -180,18 +193,25 @@ def train(
             device,
             epoch,
             loss_scaler,
+            args.distillation_type,
             args.clip_grad,
             model_ema,
             mixup_fn,
             set_training_mode=args.finetune == "",  # keep in eval mode during finetuning
             amp_autocast=amp_autocast,
             n_mine_samples=args.n_mine_samples,
-            neptune_run=neptune_run
+            neptune_run=neptune_run,
         )
         # regularize with MINE
         if mine_samples is not None:
             mine_regularization(
-                model, mine_network, model_regulizer, mine_optimizer, objective, mine_samples, neptune_run=neptune_run
+                model,
+                mine_network,
+                model_regulizer,
+                mine_optimizer,
+                objective,
+                mine_samples,
+                neptune_run=neptune_run,
             )
 
         lr_scheduler.step(epoch)
@@ -211,7 +231,9 @@ def train(
                     checkpoint_path,
                 )
 
-        test_stats = evaluate(data_loader_val, model, device, amp_autocast=amp_autocast, neptune_run=neptune_run)
+        test_stats = evaluate(
+            data_loader_val, model, device, amp_autocast=amp_autocast, neptune_run=neptune_run
+        )
         print(
             f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%"
         )
@@ -237,7 +259,7 @@ def train(
 def prepare_for_finetune(model):
     if args.finetune.startswith("https"):
         checkpoint = torch.hub.load_state_dict_from_url(
-                args.finetune, map_location="cpu", check_hash=True
+            args.finetune, map_location="cpu", check_hash=True
         )
     else:
         checkpoint = torch.load(args.finetune, map_location="cpu")
@@ -264,7 +286,7 @@ def prepare_for_finetune(model):
     pos_tokens = pos_embed_checkpoint[:, num_extra_tokens:]
     pos_tokens = pos_tokens.reshape(-1, orig_size, orig_size, embedding_size).permute(0, 3, 1, 2)
     pos_tokens = torch.nn.functional.interpolate(
-            pos_tokens, size=(new_size, new_size), mode="bicubic", align_corners=False
+        pos_tokens, size=(new_size, new_size), mode="bicubic", align_corners=False
     )
     pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
     new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
@@ -410,31 +432,49 @@ def main(args):
 
     criterion = create_criterion(args)
 
-    teacher_model = None
+    teacher_models = None
     if args.distillation_type != "none":
         # assert args.teacher_path, 'need to specify teacher-path when using distillation'
         print(f"Creating teacher model: {args.teacher_model}")
+        teacher_models = []
         if args.data_set == "CIFAR":
-            teacher_model = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_resnet56", pretrained=True)
+            for teacher in args.teacher_model:
+                teacher_model = torch.hub.load(
+                    "chenyaofo/pytorch-cifar-models", f"cifar100_{teacher}", pretrained=True
+                )
+                teacher_models.append(teacher_model)
         elif args.data_set == "INAT":
             pass
         else:  # IMNET
-            teacher_model = create_model(
-                args.teacher_model,
-                pretrained=True,
-                # num_classes=args.nb_classes,
-                # global_pool="avg",
-            )
-        teacher_model.to(device)
-        teacher_model.eval()
+            for teacher in args.teacher_model:
+                teacher_model = create_model(
+                    teacher,
+                    pretrained=True,
+                )
+                teacher_models.append(teacher_model)
+
+        for teacher_model in teacher_models:
+            teacher_model.to(device)
+            teacher_model.eval()
 
     # wrap the criterion in our custom DistillationLoss, which
     # just dispatches to the original criterion if args.distillation_type is 'none'
-    criterion = DistillationLoss(
-        criterion, teacher_model, args.distillation_type, args.distillation_alpha, args.distillation_tau
-    )
+    if args.distillation_type != "none":
+        criterion = DistillationLoss(
+            criterion,
+            teacher_models,
+            args.distillation_type,
+            args.distillation_alpha,
+            args.distillation_tau,
+            run=neptune_run,
+        )
 
-    output_dir = Path(args.output_dir)
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_dir = (
+        Path(args.output_dir)
+        / f"{args.data_set}_{args.model}_s{args.patch_size}_{args.input_size}_{current_time}"
+    )
+    output_dir.mkdir(exist_ok=False, parents=True)
     if args.resume:
         if args.resume.startswith("https"):
             checkpoint = torch.hub.load_state_dict_from_url(
@@ -458,7 +498,9 @@ def main(args):
                 loss_scaler.load_state_dict(checkpoint["scaler"])
 
     if args.eval:
-        test_stats = evaluate(data_loader_val, model, device, amp_autocast=amp_autocast, neptune_run=neptune_run)
+        test_stats = evaluate(
+            data_loader_val, model, device, amp_autocast=amp_autocast, neptune_run=neptune_run
+        )
         print(
             f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%"
         )
@@ -481,7 +523,7 @@ def main(args):
         dataset_val=dataset_val,
         n_parameters=n_parameters,
         args=args,
-        neptune_run=neptune_run
+        neptune_run=neptune_run,
     )
     if neptune_run:
         neptune_run.stop()
