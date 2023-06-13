@@ -1,3 +1,11 @@
+# MIT License
+# Copyright (c) 2023 Devrim Cavusoglu
+"""
+Implementation of MINE objective [1] and MINE regularization of the
+STD framework.
+
+[1] https://arxiv.org/abs/1801.04062
+"""
 from typing import Optional
 
 import torch

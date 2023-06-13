@@ -1,5 +1,5 @@
 # STD
-Unoffical PyTorch implementation of the paper [Spatial-Channel Token Distillation for Vision MLPs](https://proceedings.mlr.press/v162/li22c.html).
+A PyTorch implementation of the paper [Spatial-Channel Token Distillation for Vision MLPs](https://proceedings.mlr.press/v162/li22c.html). This project codebase is mostly based on the codebase of [DeiT from Facebook Research](https://github.com/facebookresearch/deit) and built on top of it with according changes, additions or removals.
 
 ## Installation
 
@@ -23,16 +23,16 @@ Taks to-do in the roadmap:
 ### Phase 1
 - [X] MLP Mixer with STD
 - [X] Implement MINE Regularization
-- [ ] Refactor the training params to match with the paper & refactor params from transformer models to allMLP models
-- [ ] Train CIFAR-100
+- [X] Refactor the training params to match with the paper & refactor params from transformer models to allMLP models
+- [X] Train CIFAR-100
 
 ### Phase 2
-- [ ] CycleMLP with STD
-- [ ] Multi-teacher implementation
-- [ ] Confidence reweighting term for multi-teacher setting
-- [ ] Last/Intermediate layer distillation
-- [ ] Train ImageNet-1k
-- [ ] Compare results with the paper
+- [ ] ~~CycleMLP with STD~~
+- [X] Multi-teacher implementation
+- [X] Confidence reweighting term for multi-teacher setting
+- [X] Last/Intermediate layer distillation
+- [X] Train ImageNet-1k
+- [X] Compare results with the paper
 
 ## Notes
 
@@ -61,3 +61,8 @@ To reformat the codebase use
 ```shell
 python -m scripts.run_code_style format
 ```
+
+## License
+
+This work contains the implementation of the methodology and study presented in the 
+_Spatial-Channel Token Distillation for Vision MLPs_ paper. Also as the building block of the codebase, [facebookresearch/deit](https://github.com/facebookresearch/deit) is used, modified and adapted accordingly when necessary. The work here is licensed under MIT License (extending deit repository Apache license).

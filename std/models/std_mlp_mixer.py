@@ -1,4 +1,29 @@
-import warnings
+# Copyright (c) 2023 Devrim Cavusoglu
+# Copyright (c) 2021 Phil Wang
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+"""
+MLP Mixer with STD addition. This file is taken and adapted from
+Phil Wang's Pytorch implementation of MLP-Mixer. See below the original file
+https://github.com/lucidrains/mlp-mixer-pytorch/blob/main/mlp_mixer_pytorch/mlp_mixer_pytorch.py
+"""
+
 from functools import partial
 from typing import Optional
 
@@ -159,8 +184,13 @@ class STDMLPMixer(nn.Module):
                     z, ts, tc = layer(z, ts, tc)
                 else:
                     z, _, _ = layer(z, None, None)
-            else:
-                if (i + 1) % 3 == 2 or (i + 1) == self.depth:  # every 2/3 pos and always last layer
+            else:  # distill intermediate
+                # TODO: We are propogating the intermediate distillation tokens
+                #   to the next layer the original implementation uses to seperate
+                #   token blocks for distilling intermediate pos (2/3) and the last layer.
+                if (
+                    i == int(self.depth * 2 / 3) or (i + 1) == self.depth
+                ):  # on 2/3 pos and always last layer
                     z, ts, tc = layer(z, ts, tc)
                 else:
                     z, _, _ = layer(z, None, None)
