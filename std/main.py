@@ -143,18 +143,8 @@ def create_loaders(dataset_train, dataset_val, distributed=True):
 
 
 def get_model(args):
-    if args.model == "mlp-mixer":
-        if args.distillation_type == "none":
-            return MLPMixer(
-                image_size=args.input_size,
-                channels=args.channels,
-                patch_size=args.patch_size,
-                dim=args.embedding_dim,
-                depth=args.depth,
-                dropout=args.drop,
-                num_classes=args.nb_classes,
-            )
-        else:
+    if "mlp-mixer" in args.model:
+        if "std" in args.model:
             return STDMLPMixer(
                 image_size=args.input_size,
                 channels=args.channels,
@@ -165,6 +155,16 @@ def get_model(args):
                 num_classes=args.nb_classes,
                 distill_intermediate=args.distill_intermediate,
                 n_teachers=len(args.teacher_model),
+            )
+        else:
+            return MLPMixer(
+                image_size=args.input_size,
+                channels=args.channels,
+                patch_size=args.patch_size,
+                dim=args.embedding_dim,
+                depth=args.depth,
+                dropout=args.drop,
+                num_classes=args.nb_classes,
             )
     else:
         print("Only MLP-Mixer is available currently, others will come soon!")
@@ -494,14 +494,16 @@ def main(args):
         Path(args.output_dir)
         / f"{args.data_set}_{args.model}_s{args.patch_size}_{args.input_size}_{current_time}"
     )
-    output_dir.mkdir(exist_ok=False, parents=True)
+    if not args.eval:
+        output_dir.mkdir(exist_ok=False, parents=True)
     if args.resume:
         if args.resume.startswith("https"):
             checkpoint = torch.hub.load_state_dict_from_url(
                 args.resume, map_location="cpu", check_hash=True
             )
         else:
-            checkpoint = torch.load(args.resume, map_location="cpu")
+            checkpoint_path = Path(args.resume) / "checkpoint.pth"
+            checkpoint = torch.load(checkpoint_path, map_location="cpu")
         model_without_ddp.load_state_dict(checkpoint["model"])
         if (
             not args.eval
