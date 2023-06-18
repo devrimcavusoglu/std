@@ -144,6 +144,7 @@ class STDMLPMixer(nn.Module):
         self.depth = depth
         self.n_teachers = n_teachers
         self.distill_intermediate = distill_intermediate
+        self.intermediate_layer_idx = int(self.depth * 2 / 3)
         self.init_distillation_tokens()
 
         self.patchifier = Rearrange(
@@ -186,10 +187,10 @@ class STDMLPMixer(nn.Module):
                     z, _, _ = layer(z, None, None)
             else:  # distill intermediate
                 # TODO: We are propogating the intermediate distillation tokens
-                #   to the next layer the original implementation uses to seperate
+                #   to the next layer, but the original implementation uses to seperate
                 #   token blocks for distilling intermediate pos (2/3) and the last layer.
                 if (
-                    i == int(self.depth * 2 / 3) or (i + 1) == self.depth
+                    i == self.intermediate_layer_idx or (i + 1) == self.depth
                 ):  # on 2/3 pos and always last layer
                     z, ts, tc = layer(z, ts, tc)
                 else:
