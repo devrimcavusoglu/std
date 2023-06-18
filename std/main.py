@@ -1,5 +1,25 @@
 # Copyright (c) 2015-present, Facebook, Inc.
 # All rights reserved.
+# Copyright 2020 - present, Facebook, Inc
+# Copyright 2023 Devrim Cavusoglu
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Main script to control different procedures (training, evaluation, etc.).
+This file is taken and adapted for STD implementation from Facebook
+Research DeiT repository. See the original source below
+https://github.com/facebookresearch/deit/blob/main/main.py
+"""
 import argparse
 import datetime
 import json
@@ -123,18 +143,8 @@ def create_loaders(dataset_train, dataset_val, distributed=True):
 
 
 def get_model(args):
-    if args.model == "mlp-mixer":
-        if args.distillation_type == "none":
-            return MLPMixer(
-                image_size=args.input_size,
-                channels=args.channels,
-                patch_size=args.patch_size,
-                dim=args.embedding_dim,
-                depth=args.depth,
-                dropout=args.drop,
-                num_classes=args.nb_classes,
-            )
-        else:
+    if "mlp-mixer" in args.model:
+        if "std" in args.model:
             return STDMLPMixer(
                 image_size=args.input_size,
                 channels=args.channels,
@@ -145,6 +155,16 @@ def get_model(args):
                 num_classes=args.nb_classes,
                 distill_intermediate=args.distill_intermediate,
                 n_teachers=len(args.teacher_model),
+            )
+        else:
+            return MLPMixer(
+                image_size=args.input_size,
+                channels=args.channels,
+                patch_size=args.patch_size,
+                dim=args.embedding_dim,
+                depth=args.depth,
+                dropout=args.drop,
+                num_classes=args.nb_classes,
             )
     else:
         print("Only MLP-Mixer is available currently, others will come soon!")
@@ -474,14 +494,16 @@ def main(args):
         Path(args.output_dir)
         / f"{args.data_set}_{args.model}_s{args.patch_size}_{args.input_size}_{current_time}"
     )
-    output_dir.mkdir(exist_ok=False, parents=True)
+    if not args.eval:
+        output_dir.mkdir(exist_ok=False, parents=True)
     if args.resume:
         if args.resume.startswith("https"):
             checkpoint = torch.hub.load_state_dict_from_url(
                 args.resume, map_location="cpu", check_hash=True
             )
         else:
-            checkpoint = torch.load(args.resume, map_location="cpu")
+            checkpoint_path = Path(args.resume) / "checkpoint.pth"
+            checkpoint = torch.load(checkpoint_path, map_location="cpu")
         model_without_ddp.load_state_dict(checkpoint["model"])
         if (
             not args.eval

@@ -1,9 +1,33 @@
+# Copyright (c) 2023 Devrim Cavusoglu
+# Copyright (c) 2021 Phil Wang
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+"""
+MLP Mixer. This file is taken and adapted from Phil Wang's
+Pytorch implementation of MLP-Mixer. See below the original file
+https://github.com/lucidrains/mlp-mixer-pytorch/blob/main/mlp_mixer_pytorch/mlp_mixer_pytorch.py
+"""
+
 from functools import partial
-from typing import Optional
 
 import torch
 from einops.layers.torch import Rearrange, Reduce
-from timm.models.layers import trunc_normal_
 from torch import nn
 
 pair = lambda x: x if isinstance(x, tuple) else (x, x)
@@ -61,7 +85,6 @@ class MixerBlock(nn.Module):
     def forward(self, z: torch.Tensor):
         u = self.token_mixer(z)
         z = self.channel_mixer(u)
-
         return z
 
 
@@ -100,7 +123,6 @@ class MLPMixer(nn.Module):
         self.classifier = nn.Linear(dim, num_classes)
 
     def forward_features(self, x):
-        B = x.shape[0]  # n_batch
         x = self.patchifier(x)
         z = self.per_patch_fc(x)
         for i, layer in enumerate(self.mixer_blocks):
@@ -110,38 +132,6 @@ class MLPMixer(nn.Module):
         return z
 
     def forward(self, x):
-        B = x.shape[0]  # n_batch
         z = self.forward_features(x)
         outputs = self.classifier(z)
         return outputs
-
-
-if __name__ == "__main__":
-    import torch
-    from timm.models.mlp_mixer import MlpMixer
-    from torchinfo import summary
-
-    from std.mine import build_mine, mine_regularization
-
-    torch.manual_seed(3)
-
-    device = torch.device("cuda")
-    image_size = 32
-    mixer = MLPMixer(
-        image_size=image_size, channels=3, patch_size=4, dim=512, depth=8, num_classes=100
-    ).to(device)
-    input_size = (2, 3, image_size, image_size)  # b,c,h,w
-    summary(mixer, input_size=input_size, device=device)
-    torch.manual_seed(3)
-    x = torch.randn(*input_size, device=device)
-    y, y_kd = mixer(x)
-    print(y)
-    print(x.shape, y.shape, y_kd.shape)
-
-    # dim_spatial = 512
-    # dim_channel = 196
-    #
-    # model_optimizer, mine_network, mine_optimizer, objective = build_mine(
-    #     mixer, dim_spatial, dim_channel, device
-    # )
-    # mine_regularization(mixer, mine_network, model_optimizer, mine_optimizer, objective, x)

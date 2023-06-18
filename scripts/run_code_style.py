@@ -1,3 +1,4 @@
+# Copyright (c) 2021 Open Business Software Solutions
 import sys
 
 from scripts.utils import shell, validate_and_exit

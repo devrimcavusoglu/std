@@ -1,3 +1,4 @@
+# Copyright (c) 2021 Open Business Software Solutions
 import json
 import os
 import re
