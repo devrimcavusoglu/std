@@ -44,25 +44,7 @@ This should give the following output for model STD-56
 Accuracy of the network on the 10000 test images: 76.9
 ```
 
-one important thing to notice here, if the model is trained with multiple-teacher setting, then you must pass `--teacher-model` argument accordingly to supply correct teacher count (all multi-teacher settings in the experiments were 2 teacher setting). Alternatively, instead of the model names you can pass anything (i.e. `--teacher-model 1 2` would work). Since this is evaluation only, instantiation of the teacher models do not take place, but this will inform the STD model to instantiate with correct layers and tokens, so that the model can be loaded correctly. 
-
-## TODO
-Taks to-do in the roadmap:
-
-### Phase 1
-- [X] MLP Mixer with STD
-- [X] Implement MINE Regularization
-- [X] Refactor the training params to match with the paper & refactor params from transformer models to allMLP models
-- [X] Train CIFAR-100
-
-### Phase 2
-- [ ] ~~CycleMLP with STD~~
-- [X] Multi-teacher implementation
-- [X] Confidence reweighting term for multi-teacher setting
-- [X] Last/Intermediate layer distillation
-  - [ ] Implement separate tokens for intermidate-last layer distillation, which gives the best results in the paper.
-- [X] Train ImageNet-1k
-- [X] Compare results with the paper
+one important thing to notice here, if the model is trained with multiple-teacher setting, then you must pass `--teacher-model` argument accordingly to supply correct teacher count (all multi-teacher settings in the experiments were 2 teacher setting). Alternatively, instead of the model names you can pass anything (i.e. `--teacher-model 1 2` would work). Since this is evaluation only, instantiation of the teacher models do not take place, but this will inform the STD model to instantiate with correct layers and tokens, so that the model can be loaded correctly.
 
 ## Notes
 
@@ -70,12 +52,14 @@ Notes for implementation.
 
 ### Notes regarding MINE Regularization implementation:
 
-- The number of samples that MINE algorithm uses is not specified in the paper. By default, it's equal to the batch size, but an argument added in the `main.py` as `n-mine-samples` to be specified if one wish to use different sample size other than the batch size for MINE. It can be set as 0 to not apply MINE regularization on the STD tokens. 
-- It is not explicitly mentioned in the paper when the MINE regularization is applied on the weights, but we assumed that it is applied after casual weight updates (training).
+The setup regarding the MINE regularization is not explicitly mentioned in the paper. There are mainly four parts that we set on our assumptions in the implementation:
 
-### Notes regarding experimental setup
+- **Learning Rate:** The learning rate for the updates at Algorithm 1 (see 2.1.2.) is not mentioned. With some small experiments, we set and fixed the learning rate for MINE updates **for both statistics network and the vision model** as 0.01. We set this lr (as a bit high) due to the assumption of the sample size for the regularization. 
+- **Sample size:** There is no explicit information in the paper regarding on how many samples this regularization has been done. We set this as a tunable argument in our implementation and set the default value as the batch size of the vision model. Thus, there are N samples used in each epoch for regularization where N is the original batch size used to train the vision model. Since the update uses a single batch and obviously **# of all batches >> 1**, for this regularization to have an effect we set the learning rate for regularization accordingly (a bit high compared to learning rate of the vision model).
+  - **Note:** As this can be tuned to have higher, currently there is no data loader for this, and hence for higher sample size and with available memory limits, the training could potentially fail. Data loader for this part may come.
+- **Statistics Network:** In the paper regarding the architecture of the statistics network, the information is given as 3 layer MLP with 512 dims. We assumed GELU as the activation function for all layers (same as in the MLP-Mixer layers), and assumed that there are no additional operations applied to the layers.
+- **Selecting Samples:** For selecting joint samples (paired tokens) and marginal samples (unpaired tokens), we implemented a very naive way of derangement. The way follows the idea of shifting sample indices to 1 index right (i.e. indicies p=0,1,2,3,4 are used for both $T_S$ and $T_C$, and for unpaired tokens ($\overline{T_C}$) the indices becomes u=1,2,3,4,0.). This naive way is simple and guarantees derangement, but more complicated algorithms may be found. Moreover, this is safe to use as we collect the samples for regularization during training and effectively select a single instance from each batch and batches are randomly shuffled in each epoch.
 
-- In the paper, it's stated that "_the distillation tokens are inserted 2/3 positions_". It is assumed in the implementation that they refer to every 2nd of 3rd **network block** and not a single layer (e.g. Mixer block for MLPMixer).
 
 
 ## Contribution
